@@ -92,6 +92,7 @@ const specialColors = {
 
 export default defineConfig({
   envMode: 'build',
+  dark: 'class',
   presets: [presetMini(), presetExtra(), presetWind3()],
   transformers: [transformerVariantGroup(), transformerDirectives({ enforce: 'pre' })],
   content: {

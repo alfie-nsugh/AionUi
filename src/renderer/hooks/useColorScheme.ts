@@ -13,19 +13,27 @@ export type ColorScheme = 'default';
 
 const DEFAULT_COLOR_SCHEME: ColorScheme = 'default';
 
+const applyColorSchemeToDocument = (scheme: ColorScheme) => {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  document.documentElement.setAttribute('data-color-scheme', scheme);
+};
+
 /**
  * Initialize color scheme immediately when module loads
  * 在模块加载时立即初始化配色方案，避免页面闪烁
  */
 const initColorScheme = async () => {
+  applyColorSchemeToDocument(DEFAULT_COLOR_SCHEME);
   try {
     const scheme = (await ConfigStorage.get('colorScheme')) as ColorScheme;
     const initialScheme = scheme || DEFAULT_COLOR_SCHEME;
-    document.documentElement.setAttribute('data-color-scheme', initialScheme);
+    applyColorSchemeToDocument(initialScheme);
     return initialScheme;
   } catch (error) {
     console.error('Failed to load initial color scheme:', error);
-    document.documentElement.setAttribute('data-color-scheme', DEFAULT_COLOR_SCHEME);
+    applyColorSchemeToDocument(DEFAULT_COLOR_SCHEME);
     return DEFAULT_COLOR_SCHEME;
   }
 };
@@ -48,7 +56,7 @@ const useColorScheme = (): [ColorScheme, (scheme: ColorScheme) => Promise<void>]
    * Switch CSS variables by setting data-color-scheme attribute 通过设置 data-color-scheme 属性切换 CSS 变量
    */
   const applyColorScheme = useCallback((newScheme: ColorScheme) => {
-    document.documentElement.setAttribute('data-color-scheme', newScheme);
+    applyColorSchemeToDocument(newScheme);
   }, []);
 
   /**
