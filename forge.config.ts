@@ -6,65 +6,10 @@ import { MakerWix } from '@electron-forge/maker-wix';
 const MakerSquirrel = process.platform === 'win32' ? require('@electron-forge/maker-squirrel').MakerSquirrel : null;
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
-import { WebpackPlugin } from '@electron-forge/plugin-webpack';
+import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import path from 'path';
-import { mainConfig } from './config/webpack/webpack.config';
-import { rendererConfig } from './config/webpack/webpack.renderer.config';
 import packageJson from './package.json';
-
-// Allow developers to override the npm start dev-server/logging ports without touching code.
-// 允许开发者通过环境变量修改 dev server / 日志端口，无需改代码
-const DEFAULT_DEV_SERVER_PORT = 3000;
-const DEFAULT_LOGGER_PORT = 9000;
-const DEV_PORT_ENV_KEYS = ['AIONUI_DEV_PORT', 'DEV_SERVER_PORT', 'PORT'] as const;
-const LOGGER_PORT_ENV_KEYS = ['AIONUI_LOGGER_PORT', 'DEV_LOGGER_PORT', 'LOGGER_PORT'] as const;
-
-const parsePort = (value?: string | null): number | null => {
-  if (!value) return null;
-  const port = Number.parseInt(value, 10);
-  if (Number.isFinite(port) && port > 0 && port < 65536) {
-    return port;
-  }
-  console.warn(`[dev-server] Ignoring invalid port value: ${value}`);
-  return null;
-};
-
-const resolveDevServerPort = (): { port: number; overridden: boolean } => {
-  // Check well-known env vars (priority order). Fallback to default when none provided.
-  // 依次检查常见环境变量，若未设置则退回默认端口
-  for (const key of DEV_PORT_ENV_KEYS) {
-    const port = parsePort(process.env[key]);
-    if (port) {
-      console.log(`[dev-server] Using ${key}=${port}`);
-      return { port, overridden: true };
-    }
-  }
-  return { port: DEFAULT_DEV_SERVER_PORT, overridden: false };
-};
-
-const resolveLoggerPort = (devPort: number, devPortOverridden: boolean): number => {
-  for (const key of LOGGER_PORT_ENV_KEYS) {
-    const port = parsePort(process.env[key]);
-    if (port) {
-      console.log(`[dev-server] Using ${key}=${port}`);
-      return port;
-    }
-  }
-
-  if (devPortOverridden) {
-    // Shift logger port away from the custom dev port to avoid conflicts.
-    // 当自定义 dev 端口时，将日志端口偏移，避免冲突
-    const candidate = devPort + 1 <= 65535 ? devPort + 1 : devPort - 1;
-    console.log(`[dev-server] Auto-selecting logger port ${candidate} based on dev port ${devPort}`);
-    return candidate;
-  }
-
-  return DEFAULT_LOGGER_PORT;
-};
-
-const { port: devServerPort, overridden: isDevPortOverridden } = resolveDevServerPort();
-const loggerPort = resolveLoggerPort(devServerPort, isDevPortOverridden);
 
 const apkName = 'AionUi_' + packageJson.version + '_' + (process.env.arch || process.arch);
 const skipNativeRebuild = process.env.FORGE_SKIP_NATIVE_REBUILD === 'true';
@@ -102,7 +47,7 @@ module.exports = {
     // Windows 特定配置
     platform: process.env.npm_config_target_platform || process.platform,
     // Use target arch from build script, not host arch
-    // This ensures .webpack/{target-arch}/ matches the final package architecture
+    // This ensures .vite/{target-arch}/ matches the final package architecture
     arch: targetArch,
   },
   rebuildConfig: {
@@ -202,37 +147,23 @@ module.exports = {
       // 配置需要处理的 native 依赖
       include: ['node-pty', 'better-sqlite3', 'bcrypt'],
     }),
-    new WebpackPlugin({
-      port: devServerPort,
-      loggerPort,
-      mainConfig,
-      renderer: {
-        config: rendererConfig,
-        entryPoints: [
-          {
-            html: './public/index.html',
-            js: './src/renderer/index.ts',
-            name: 'main_window',
-            preload: {
-              js: './src/preload.ts',
-            },
-          },
-        ],
-      },
-      devServer: {
-        // 开发服务器配置
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    new VitePlugin({
+      build: [
+        {
+          entry: './src/index.ts',
+          config: './vite.main.config.ts',
         },
-        client: {
-          overlay: {
-            errors: true, // 显示错误
-            warnings: false, // 不显示警告
-          },
+        {
+          entry: './src/preload.ts',
+          config: './vite.preload.config.ts',
         },
-      },
+      ],
+      renderer: [
+        {
+          name: 'main_window',
+          config: './vite.renderer.config.mts',
+        },
+      ],
     }),
     // Fuses are used to enable/disable various Electron functionality
     // at package time, before code signing the application

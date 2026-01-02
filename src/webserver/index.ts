@@ -7,9 +7,9 @@
 import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
-import { shell } from 'electron';
 import { execSync } from 'child_process';
 import { networkInterfaces } from 'os';
+import path from 'path';
 import { AuthService } from '@/webserver/auth/service/AuthService';
 import { UserRepository } from '@/webserver/auth/repository/UserRepository';
 import { AUTH_CONFIG, SERVER_CONFIG } from './config/constants';
@@ -23,6 +23,46 @@ import { registerStaticRoutes } from './routes/staticRoutes';
 // Express Request type extension is defined in src/webserver/types/express.d.ts
 
 const DEFAULT_ADMIN_USERNAME = AUTH_CONFIG.DEFAULT_USER.USERNAME;
+
+type StartWebServerOptions = {
+  /**
+   * Skip serving static assets (useful when a separate dev server serves the frontend)
+   */
+  skipStatic?: boolean;
+  /**
+   * Additional allowed origins for CORS (e.g. webpack dev server)
+   */
+  extraAllowedOrigins?: string[];
+  /**
+   * Custom WebSocket path; falls back to '/' when omitted
+   */
+  wsPath?: string;
+  /**
+   * Disable auto-opening the browser window
+   */
+  autoOpen?: boolean;
+  /**
+   * Override static asset root/index for standalone usage without Electron
+   */
+  staticRoot?: string;
+  indexHtml?: string;
+};
+
+type ExternalOpener = (url: string) => void | Promise<void>;
+
+const createExternalOpener = (): ExternalOpener | null => {
+  try {
+    // Lazy-load Electron so standalone Node environments don't fail
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { shell } = require('electron') as { shell?: { openExternal?: ExternalOpener } };
+    if (shell?.openExternal) {
+      return shell.openExternal.bind(shell);
+    }
+  } catch {
+    // Electron not available - ignore
+  }
+  return null;
+};
 
 /**
  * 获取局域网 IP 地址
@@ -177,7 +217,19 @@ function displayInitialCredentials(credentials: { username: string; password: st
  * @param port 服务器端口 / Server port
  * @param allowRemote 是否允许远程访问 / Allow remote access
  */
-export async function startWebServer(port: number, allowRemote = false): Promise<void> {
+export async function startWebServer(port: number, allowRemote = false, options?: StartWebServerOptions): Promise<void> {
+  const resolveWsPath = (input?: string): string | undefined => {
+    if (!input) return undefined;
+    if (input === '/') return '/';
+    return input.startsWith('/') ? input : `/${input}`;
+  };
+
+  const normalizedStaticRoot = options?.staticRoot ? path.resolve(options.staticRoot) : undefined;
+  const normalizedIndexHtml = options?.indexHtml ? path.resolve(options.indexHtml) : undefined;
+  const wsPath = resolveWsPath(options?.wsPath || process.env.AIONUI_WS_PATH);
+  const listenHost = allowRemote ? SERVER_CONFIG.REMOTE_HOST : SERVER_CONFIG.DEFAULT_HOST;
+  const openExternal = createExternalOpener();
+
   // 设置服务器配置
   // Set server configuration
   SERVER_CONFIG.setServerConfig(port, allowRemote);
@@ -186,7 +238,10 @@ export async function startWebServer(port: number, allowRemote = false): Promise
   // Create Express app and server
   const app = express();
   const server = createServer(app);
-  const wss = new WebSocketServer({ server });
+  const wss = new WebSocketServer({
+    server,
+    ...(wsPath && wsPath !== '/' ? { path: wsPath } : {}),
+  });
 
   // 初始化默认管理员账户
   // Initialize default admin account
@@ -195,13 +250,18 @@ export async function startWebServer(port: number, allowRemote = false): Promise
   // 配置中间件
   // Configure middleware
   setupBasicMiddleware(app);
-  setupCors(app, port, allowRemote);
+  setupCors(app, port, allowRemote, options?.extraAllowedOrigins);
 
   // 注册路由
   // Register routes
   registerAuthRoutes(app);
   registerApiRoutes(app);
-  registerStaticRoutes(app);
+  if (!options?.skipStatic) {
+    registerStaticRoutes(app, {
+      staticRoot: normalizedStaticRoot,
+      indexHtml: normalizedIndexHtml,
+    });
+  }
 
   // 配置错误处理（必须最后）
   // Configure error handler (must be last)
@@ -210,7 +270,7 @@ export async function startWebServer(port: number, allowRemote = false): Promise
   // 启动服务器
   // Start server
   return new Promise((resolve, reject) => {
-    server.listen(port, () => {
+    server.listen(port, listenHost, () => {
       const localUrl = `http://localhost:${port}`;
 
       // 尝试获取服务器 IP（Linux 无桌面环境获取公网 IP，其他环境获取局域网 IP）
@@ -236,9 +296,13 @@ export async function startWebServer(port: number, allowRemote = false): Promise
       // Auto-open browser (only when desktop environment is available)
       // 当 allowRemote 为 true 时，优先打开局域网 IP
       // When allowRemote is true, prefer to open LAN IP
-      if (process.env.DISPLAY || process.platform !== 'linux') {
+      if (options?.autoOpen !== false && (process.env.DISPLAY || process.platform !== 'linux')) {
         const urlToOpen = allowRemote && serverIP ? displayUrl : localUrl;
-        void shell.openExternal(urlToOpen);
+        if (openExternal) {
+          void openExternal(urlToOpen);
+        } else {
+          console.log(`\n   👉 Open this URL in your browser: ${urlToOpen}\n`);
+        }
       }
 
       // 初始化 WebSocket 适配器

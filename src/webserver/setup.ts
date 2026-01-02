@@ -65,7 +65,7 @@ function normalizeOrigin(origin: string): string | null {
   }
 }
 
-function getConfiguredOrigins(port: number, allowRemote: boolean): Set<string> {
+function getConfiguredOrigins(port: number, allowRemote: boolean, extraAllowedOrigins: string[] = []): Set<string> {
   const baseOrigins = new Set<string>([`http://localhost:${port}`, `http://127.0.0.1:${port}`]);
 
   if (process.env.SERVER_BASE_URL) {
@@ -75,24 +75,30 @@ function getConfiguredOrigins(port: number, allowRemote: boolean): Set<string> {
     }
   }
 
-  const extraOrigins = (process.env.AIONUI_ALLOWED_ORIGINS || '')
+  const configuredOrigins = (process.env.AIONUI_ALLOWED_ORIGINS || '')
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean)
     .map((origin) => normalizeOrigin(origin))
     .filter((origin): origin is string => Boolean(origin));
 
-  extraOrigins.forEach((origin) => baseOrigins.add(origin));
+  configuredOrigins.forEach((origin) => baseOrigins.add(origin));
+  extraAllowedOrigins
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+    .map((origin) => normalizeOrigin(origin))
+    .filter((origin): origin is string => Boolean(origin))
+    .forEach((origin) => baseOrigins.add(origin));
 
-  if (allowRemote && baseOrigins.size === 2 && extraOrigins.length === 0) {
+  if (allowRemote && baseOrigins.size === 2 && configuredOrigins.length === 0 && extraAllowedOrigins.length === 0) {
     console.warn('[security] Remote access enabled but no additional CORS origins configured. Requests from other origins will be blocked. Set AIONUI_ALLOWED_ORIGINS to a comma-separated list if cross-origin access is required.');
   }
 
   return baseOrigins;
 }
 
-export function setupCors(app: Express, port: number, allowRemote: boolean): void {
-  const allowedOrigins = getConfiguredOrigins(port, allowRemote);
+export function setupCors(app: Express, port: number, allowRemote: boolean, extraAllowedOrigins?: string[]): void {
+  const allowedOrigins = getConfiguredOrigins(port, allowRemote, extraAllowedOrigins);
 
   app.use(
     cors({

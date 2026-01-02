@@ -26,7 +26,7 @@ const STORAGE_PATH = {
   env: '.aionui-env',
 };
 
-const getHomePage = getConfigPath;
+const getHomePage = typeof getConfigPath === 'function' ? getConfigPath : () => path.join(process.cwd(), 'aionui-config');
 
 const mkdirSync = (path: string) => {
   return _mkdirSync(path, { recursive: true });

@@ -6,11 +6,12 @@ This directory contains scripts for building and packaging AionUi across differe
 
 | Script | Lines | Purpose |
 |--------|-------|---------|
-| `build-with-builder.js` | 116 | Coordinates Electron Forge and electron-builder |
-| `rebuildNativeModules.js` | 219 | **Unified native module rebuild utility** |
-| `beforeBuild.js` | 38 | Pre-packaging native module rebuild hook |
-| `afterPack.js` | 67 | Post-packaging verification (Linux only) |
-| `afterSign.js` | 47 | macOS code signing and notarization |
+| `build-with-builder.cts` | 116 | Coordinates Electron Forge and electron-builder |
+| `rebuildNativeModules.cts` | 219 | **Unified native module rebuild utility** |
+| `afterPack.cts` | 67 | Post-packaging verification (Linux only) |
+| `afterPack.cjs` | 2 | Loader shim for electron-builder (tsx/register) |
+| `afterSign.cts` | 47 | macOS code signing and notarization |
+| `afterSign.cjs` | 2 | Loader shim for electron-builder (tsx/register) |
 
 **Total**: 487 lines (down from 711 lines before optimization)
 
@@ -21,33 +22,31 @@ This directory contains scripts for building and packaging AionUi across differe
 ```
 npm run dist:*
     ↓
-build-with-builder.js
+build-with-builder.cts
     ↓
-    ├─→ Electron Forge (webpack compilation)
+    ├─→ Electron Forge (Vite compilation)
     ↓
 electron-builder
     ↓
-    ├─→ beforeBuild.js → rebuildNativeModules.js (all platforms)
     ├─→ Package app
-    ├─→ afterPack.js → rebuildNativeModules.js (Linux only)
-    └─→ afterSign.js (macOS only)
+    ├─→ afterPack.cjs → afterPack.cts → rebuildNativeModules.cts (Linux only)
+    └─→ afterSign.cjs → afterSign.cts (macOS only)
 ```
 
 ## Native Module Rebuild Strategy
 
-### `rebuildNativeModules.js` - Unified Rebuild Utility
+### `rebuildNativeModules.cts` - Unified Rebuild Utility
 
 This is the core module that handles all native module rebuilding. It provides:
 
 #### Functions
 
 1. **`rebuildWithElectronRebuild(options)`**
-   - Used by: `beforeBuild.js`
-   - Rebuilds all native modules in source directory
+   - Rebuilds all native modules in source directory (if invoked manually)
    - Modules: `better-sqlite3`, `bcrypt`, `node-pty` (macOS/Linux only)
 
 2. **`rebuildSingleModule(options)`**
-   - Used by: `afterPack.js`
+   - Used by: `afterPack.cts`
    - Rebuilds a single module in packaged app
    - Strategy: Try prebuild-install first, fall back to electron-rebuild
 
@@ -68,13 +67,11 @@ This is the core module that handles all native module rebuilding. It provides:
 
 #### macOS
 - **Modules rebuilt**: `better-sqlite3`, `bcrypt`, `node-pty`
-- **When**: `beforeBuild` hook only
 - **Post-build**: Code signing and notarization
 
 #### Linux
 - **Modules rebuilt**: `better-sqlite3`, `bcrypt`, `node-pty`
 - **When**:
-  - `beforeBuild`: Rebuild in source directory
   - `afterPack`: Rebuild `better-sqlite3` in packaged app
 - **Strategy**: Download prebuilt binary first, compile if unavailable
 
@@ -96,7 +93,7 @@ npm run dist:linux
 ### Manual native module rebuild
 
 ```javascript
-const { rebuildWithElectronRebuild } = require('./scripts/rebuildNativeModules');
+const { rebuildWithElectronRebuild } = require('./scripts/rebuildNativeModules.cts');
 
 rebuildWithElectronRebuild({
   platform: 'linux',
@@ -108,7 +105,7 @@ rebuildWithElectronRebuild({
 ### Rebuild single module in packaged app
 
 ```javascript
-const { rebuildSingleModule } = require('./scripts/rebuildNativeModules');
+const { rebuildSingleModule } = require('./scripts/rebuildNativeModules.cts');
 
 rebuildSingleModule({
   moduleName: 'better-sqlite3',
@@ -119,12 +116,7 @@ rebuildSingleModule({
 });
 ```
 
-## Why Two Rebuild Stages?
-
-### beforeBuild (All Platforms)
-- Rebuilds modules in **source directory** (`node_modules/`)
-- Ensures correct binaries are packaged
-- Uses `electron-rebuild` for all modules
+## Why a Post-Pack Rebuild?
 
 ### afterPack (Linux Only)
 - Rebuilds `better-sqlite3` in **packaged app** (`app.asar.unpacked/`)
@@ -140,8 +132,7 @@ rebuildSingleModule({
 **Solution**: Check that:
 1. Module is in `electron-builder.yml` → `files` section
 2. Module is in `electron-builder.yml` → `asarUnpack` section
-3. `beforeBuild.js` ran successfully during build
-4. For Linux: `afterPack.js` ran successfully
+3. For Linux: `afterPack.cts` ran successfully
 
 ### Native module crashes on launch
 
@@ -149,8 +140,7 @@ rebuildSingleModule({
 
 **Solution**:
 1. Verify target architecture matches build architecture
-2. Check that `beforeBuild.js` rebuilt for correct architecture
-3. For Linux ARM64: Ensure `afterPack.js` rebuilt the module
+2. For Linux ARM64: Ensure `afterPack.cts` rebuilt the module
 
 ### Cross-compilation fails
 
@@ -165,17 +155,16 @@ rebuildSingleModule({
 
 ### Version 1.0 (Before Optimization)
 - Total: 711 lines across 5 files
-- Duplication: Rebuild logic in both `beforeBuild` and `afterPack`
+- Duplication: Rebuild logic across multiple hooks
 
 ### Version 2.0 (Current)
 - Total: 487 lines across 5 files
 - Savings: 224 lines (31% reduction)
 - Changes:
   - ✅ Deleted `release.sh` (67 lines) - use `npm version` instead
-  - ✅ Created `rebuildNativeModules.js` (219 lines) - unified utility
-  - ✅ Simplified `build-with-builder.js`: 321 → 116 lines
-  - ✅ Simplified `beforeBuild.js`: 95 → 38 lines
-  - ✅ Simplified `afterPack.js`: 181 → 67 lines
+  - ✅ Created `rebuildNativeModules.cts` (219 lines) - unified utility
+  - ✅ Simplified `build-with-builder.cts`: 321 → 116 lines
+  - ✅ Simplified `afterPack.cts`: 181 → 67 lines
 
 ## Contributing
 

@@ -11,8 +11,9 @@ directories:
   buildResources: resources
 
 files:
-  - .webpack/main/**/*
-  - .webpack/renderer/**/*
+  - .vite/main/**/*
+  - .vite/preload/**/*
+  - .vite/renderer/**/*
   - public/**/*
   - package.json
   - node_modules/better-sqlite3/**/*
@@ -56,12 +57,11 @@ files:
   - 'node_modules/better-sqlite3/vendor/**'
   - 'node_modules/bcrypt/vendor/**'
   - 'node_modules/node-pty/vendor/**'
-  # Exclude webpack source maps
+  # Exclude build source maps
   - '!**/*.map'
-  - '!**/webpack-stats.json'
   # Exclude syntax highlighter languages (keep common ones)
-  - '!**/.webpack/**/react-syntax-highlighter_languages_highlight_*'
-  - '.webpack/**/react-syntax-highlighter_languages_highlight_{javascript,typescript,python,java,cpp,c,html,css,json,xml,yaml,shell,bash,dockerfile,sql,markdown,go,rust,php}'
+  - '!**/.vite/**/react-syntax-highlighter_languages_highlight_*'
+  - '.vite/**/react-syntax-highlighter_languages_highlight_{javascript,typescript,python,java,cpp,c,html,css,json,xml,yaml,shell,bash,dockerfile,sql,markdown,go,rust,php}'
 
 extraResources:
   - from: public
@@ -96,8 +96,8 @@ mac:
   entitlements: entitlements.plist
   entitlementsInherit: entitlements.plist
 
-afterPack: scripts/afterPack.js
-afterSign: scripts/afterSign.js
+afterPack: scripts/afterPack.cjs
+afterSign: scripts/afterSign.cjs
 
 linux:
   target:

@@ -8,7 +8,6 @@ import type { Express, Request, Response } from 'express';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { app } from 'electron';
 import { TokenMiddleware } from '@/webserver/auth/middleware/TokenMiddleware';
 import { AUTH_CONFIG } from '../config/constants';
 import { createRateLimiter } from '../middleware/security';
@@ -17,22 +16,65 @@ import { createRateLimiter } from '../middleware/security';
  * 注册静态资源和页面路由
  * Register static assets and page routes
  */
-const resolveRendererPath = () => {
-  // Webpack assets are always inside app.asar in production or project directory in development
-  // app.getAppPath() returns the correct path for both cases
-  const appPath = app.getAppPath();
-  const baseRoot = path.join(appPath, '.webpack', 'renderer');
-  const indexHtml = path.join(baseRoot, 'main_window', 'index.html');
-
-  if (fs.existsSync(indexHtml)) {
-    return { indexHtml, staticRoot: baseRoot } as const;
-  }
-
-  throw new Error(`Renderer assets not found at ${indexHtml}`);
+type StaticRouteOptions = {
+  /**
+   * Override the static root when running without Electron.
+   * Used by standalone browser dev server builds.
+   */
+  staticRoot?: string;
+  /**
+   * Override the index.html path. Falls back to main_window/index.html under staticRoot.
+   */
+  indexHtml?: string;
 };
 
-export function registerStaticRoutes(app: Express): void {
-  const { staticRoot, indexHtml } = resolveRendererPath();
+const resolveRendererPath = (options?: StaticRouteOptions) => {
+  const overrideRoot = options?.staticRoot || process.env.AIONUI_STATIC_ROOT;
+  const overrideIndex = options?.indexHtml || process.env.AIONUI_INDEX_HTML;
+
+  if (overrideRoot) {
+    const staticRoot = path.resolve(overrideRoot);
+    const indexHtml = overrideIndex ? path.resolve(overrideIndex) : path.join(staticRoot, 'main_window', 'index.html');
+    if (fs.existsSync(indexHtml)) {
+      return { indexHtml, staticRoot } as const;
+    }
+  }
+
+  try {
+    // Webpack assets are always inside app.asar in production or project directory in development
+    // app.getAppPath() returns the correct path for both cases
+    // Lazy load electron to avoid breaking standalone Node environments
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { app } = require('electron') as { app?: { getAppPath?: () => string } };
+    const appPath = app?.getAppPath?.();
+
+    if (appPath) {
+      const candidateRoots = [path.join(appPath, '.vite', 'renderer'), path.join(appPath, '.webpack', 'renderer')];
+      for (const baseRoot of candidateRoots) {
+        const indexHtml = path.join(baseRoot, 'main_window', 'index.html');
+        if (fs.existsSync(indexHtml)) {
+          return { indexHtml, staticRoot: baseRoot } as const;
+        }
+      }
+    }
+  } catch {
+    // Electron is not available in standalone mode - fall back to dev paths
+  }
+
+  // Fallback: look for Vite/webpack dev output when running locally without Electron
+  const devRoots = [path.resolve(process.cwd(), '.vite', 'renderer'), path.resolve(process.cwd(), '.webpack', 'renderer')];
+  for (const devRoot of devRoots) {
+    const devIndex = path.join(devRoot, 'main_window', 'index.html');
+    if (fs.existsSync(devIndex)) {
+      return { indexHtml: devIndex, staticRoot: devRoot } as const;
+    }
+  }
+
+  throw new Error('Renderer assets not found. Provide AIONUI_STATIC_ROOT or build renderer assets.');
+};
+
+export function registerStaticRoutes(app: Express, options?: StaticRouteOptions): void {
+  const { staticRoot, indexHtml } = resolveRendererPath(options);
   const indexHtmlPath = indexHtml;
 
   // Create a lenient rate limiter for static page requests to prevent DDoS

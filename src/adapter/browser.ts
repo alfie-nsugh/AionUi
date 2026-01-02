@@ -42,7 +42,19 @@ if (win.electronAPI) {
   // Web runtime bridge: ensure the socket reconnects after login so session cookie can be sent
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const defaultHost = `${window.location.hostname}:25808`;
-  const socketUrl = `${protocol}//${window.location.host || defaultHost}`;
+  const normalizePath = (path?: string | null): string => {
+    if (!path) return '';
+    if (path === '/') return '/';
+    return path.startsWith('/') ? path : `/${path}`;
+  };
+
+  const envWsUrl = process.env.AIONUI_WS_URL?.trim();
+  const envWsHost = process.env.AIONUI_WS_HOST?.trim();
+  const envWsPath = process.env.AIONUI_WS_PATH?.trim();
+
+  const socketHost = envWsHost && envWsHost.length > 0 ? envWsHost : window.location.host || defaultHost;
+  const socketPath = normalizePath(envWsPath);
+  const socketUrl = envWsUrl && envWsUrl.length > 0 ? envWsUrl : `${protocol}//${socketHost}${socketPath}`;
 
   type QueuedMessage = { name: string; data: unknown };
 

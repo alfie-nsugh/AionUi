@@ -85,7 +85,7 @@
       }
     },
     {
-      "files": ["forge.config.ts", "tests/**/*.ts"],
+      "files": ["forge.config.ts", "vite.*.config.ts", "vite.*.config.mts", "tests/**/*.ts"],
       "parserOptions": {
         "project": null
       },

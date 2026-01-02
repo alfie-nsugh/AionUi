@@ -2,7 +2,8 @@ const { Arch } = require('builder-util');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { normalizeArch, rebuildSingleModule, verifyModuleBinary, getModulesToRebuild } = require('./rebuildNativeModules');
+const { normalizeArch, rebuildSingleModule, verifyModuleBinary, getModulesToRebuild } = require('./rebuildNativeModules.cts');
+const packageJson = require('../package.json');
 
 /**
  * afterPack hook for electron-builder
@@ -47,7 +48,8 @@ module.exports = async function afterPack(context) {
   const electronVersion =
     packager?.info?.electronVersion ??
     packager?.config?.electronVersion ??
-    require('../package.json').devDependencies?.electron?.replace(/^\D*/, '');
+    packageJson.devDependencies?.electron?.replace(/^\D*/, '') ??
+    packageJson.optionalDependencies?.electron?.replace(/^\D*/, '');
 
   // Determine resources directory based on platform
   // macOS: appOutDir/AionUi.app/Contents/Resources

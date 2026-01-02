@@ -6,19 +6,37 @@
 
 import { AIONUI_TIMESTAMP_REGEX } from '@/common/constants';
 import type { IDirOrFile } from '@/common/ipcBridge';
-import { app } from 'electron';
 import { existsSync, lstatSync, mkdirSync, readlinkSync, symlinkSync, unlinkSync } from 'fs';
 import fs from 'fs/promises';
+import os from 'os';
 import path from 'path';
-import { getSystemDir } from './initStorage';
+
+const resolveElectronApp = () => {
+  try {
+    // Lazy load to avoid hard dependency when running without Electron
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { app } = require('electron') as { app?: { getPath?: (name: string) => string } };
+    if (app?.getPath) {
+      return app;
+    }
+  } catch {
+    // Electron not available
+  }
+  return null;
+};
+
+const electronApp = resolveElectronApp();
+const dataRootOverride = process.env.AIONUI_DATA_DIR?.trim();
+const tempRootOverride = process.env.AIONUI_TEMP_DIR?.trim();
+
 export const getTempPath = () => {
-  const rootPath = app.getPath('temp');
-  return path.join(rootPath, 'aionui');
+  const rootPath = tempRootOverride || electronApp?.getPath?.('temp') || os.tmpdir();
+  return path.resolve(rootPath, 'aionui');
 };
 
 export const getDataPath = () => {
-  const rootPath = app.getPath('userData');
-  return path.join(rootPath, 'aionui');
+  const rootPath = dataRootOverride || electronApp?.getPath?.('userData') || path.join(os.homedir(), '.aionui');
+  return path.resolve(rootPath, 'aionui');
 };
 
 /**
@@ -40,7 +58,7 @@ export const getCliSafePath = (): string => {
     return dataPath;
   }
 
-  const homePath = app.getPath('home');
+  const homePath = electronApp?.getPath?.('home') ?? os.homedir();
   const symlinkPath = path.join(homePath, '.aionui');
 
   // Ensure symlink exists
@@ -75,8 +93,8 @@ export const getCliSafePath = (): string => {
 };
 
 export const getConfigPath = () => {
-  const rootPath = app.getPath('userData');
-  return path.join(rootPath, 'config');
+  const rootPath = dataRootOverride || electronApp?.getPath?.('userData') || path.join(os.homedir(), '.aionui');
+  return path.resolve(rootPath, 'config');
 };
 
 export const generateHashWithFullName = (fullName: string): string => {
@@ -284,6 +302,9 @@ export async function verifyDirectoryFiles(dir1: string, dir2: string): Promise<
 export const copyFilesToDirectory = async (dir: string, files?: string[]) => {
   if (!files) return Promise.resolve();
 
+  // Lazy import to avoid circular dependency issues during module initialization
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { getSystemDir } = require('./initStorage') as { getSystemDir: () => { cacheDir: string } };
   const { cacheDir } = getSystemDir();
   const tempDir = path.join(cacheDir, 'temp');
 

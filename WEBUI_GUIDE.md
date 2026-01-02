@@ -11,6 +11,7 @@ AionUi supports WebUI mode, allowing you to access the application through a web
 - [Android (Termux)](#android-termux)
 - [Remote Access](#remote-access)
 - [Troubleshooting](#troubleshooting)
+- [Browser-Only Development (Electronless)](#browser-only-development-electronless)
 
 ---
 
@@ -670,6 +671,115 @@ npm run --resetpass
 # Or for a specific user
 npm run --resetpass username
 ```
+
+---
+
+## Browser-Only Development (Electronless)
+
+Run the backend API and React frontend in your browser—no Electron window required.
+
+### Installation
+
+Choose your install path based on your needs:
+
+| Install Type             | Command                     | Size    | Use Case                |
+| ------------------------ | --------------------------- | ------- | ----------------------- |
+| **Browser-only**         | `npm install --no-optional` | ~300 MB | UI development, WSL, CI |
+| **Full (with Electron)** | `npm install`               | ~800 MB | Desktop app development |
+
+> **Tip**: Use `--no-optional` in WSL, Docker, or CI pipelines where Electron binaries aren't needed. This skips ~500 MB of Electron toolchain downloads.
+
+### Quick start
+
+```bash
+# 1) Install (browser-only)
+npm install --no-optional
+
+# Optional: if you plan to run Electron after a fresh install
+# npm run rebuild:electron
+
+# 2) Start backend + frontend together
+npm run dev:web
+
+# 3) Open http://localhost:3000
+```
+
+### Run separately (optional)
+
+- Backend only: `npm run dev:backend` (same as `npm run start:backend -- --no-open`)
+- Frontend only: `npm run dev:frontend` (Vite dev server with proxy to the backend)
+
+### Build Architecture
+
+AionUi uses **Vite** across all development modes:
+
+| Mode             | Command           | Bundler                 | Description                          |
+| ---------------- | ----------------- | ----------------------- | ------------------------------------ |
+| Electron (full)  | `npm run dev`     | Vite                    | Desktop app with native integrations |
+| Browser-only     | `npm run dev:web` | Vite                    | UI development without Electron      |
+| Production build | `npm run dist`    | Vite + electron-builder | Distributable packages               |
+
+> **Unified Vite Pipeline**: Both Electron and browser builds share the same Vite configuration for the renderer, ensuring consistent behavior across all modes.
+
+### Native Module Compatibility
+
+> [!WARNING]
+> **Electron and Node.js use different ABIs.** Native modules like `better-sqlite3` must be rebuilt when switching between modes.
+
+| After running...                             | Native modules are built for... | To switch back...              |
+| -------------------------------------------- | ------------------------------- | ------------------------------ |
+| `npm run rebuild:electron` or `npm run dist` | Electron                        | Run `npm run rebuild:node`     |
+| `npm install` or `npm run rebuild:node`      | Node.js                         | Run `npm run rebuild:electron` |
+
+**Recovery commands:**
+
+```bash
+# After Electron builds, restore Node.js compatibility for dev:backend
+npm run rebuild:node
+
+# After Node.js usage, restore Electron compatibility for dev or dist
+npm run rebuild:electron
+```
+
+### Common overrides
+
+- Backend port: `npm run dev:backend -- --port 3001`
+- Frontend port: `PORT=3002 npm run dev:frontend`
+- Keep data inside the repo (WSL/sandbox): `AIONUI_DATA_DIR=.aionui npm run dev:backend`
+- Change WebSocket path (rare): set `AIONUI_WS_PATH=/your-path` on both backend and frontend commands
+
+### Detailed Script Configuration
+
+Here is an argument-by-argument breakdown of the development scripts in `package.json`:
+
+#### `dev` (Electron + Vite)
+
+Runs the full Electron app with Vite dev server for renderer hot reload.
+
+`cross-env electron-forge start`
+
+- Uses `@electron-forge/plugin-vite` with configs in `vite.main.config.ts`, `vite.preload.config.ts`, and `vite.renderer.config.mts`.
+
+#### `dev:frontend` (Browser, Vite)
+
+Runs the Vite Development Server for browser-only UI development.
+
+`cross-env AIONUI_WS_PATH=/bridge vite --config vite.config.mts`
+
+- **`AIONUI_WS_PATH=/bridge`**: Sets WebSocket path for proxy configuration.
+- **`vite --config ...`**: Uses shared Vite config with aliases, UnoCSS, and polyfills.
+
+#### `start:backend` (Backend)
+
+Runs the server logic standalone (without Electron).
+
+`cross-env TS_NODE_FILES=true TS_NODE_PROJECT=tsconfig.json AIONUI_SKIP_STATIC=true AIONUI_WS_PATH=/bridge AIONUI_DEV_ORIGIN=http://localhost:3000 npx ts-node -r tsconfig-paths/register scripts/start-web-server.ts`
+
+- **`TS_NODE_FILES=true`**: Ensures global types are loaded.
+- **`AIONUI_SKIP_STATIC=true`**: Don't serve built static files (use hot-reloaded frontend instead).
+- **`AIONUI_DEV_ORIGIN=...`**: Configures CORS to allow requests from port 3000.
+- **`npx ts-node -r tsconfig-paths/register`**: Runs with path alias support (`@/utils`).
+- **`scripts/start-web-server.ts`**: Standalone entry point.
 
 ---
 
