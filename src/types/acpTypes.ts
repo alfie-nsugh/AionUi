@@ -15,6 +15,7 @@
 export type AcpBackendAll =
   | 'claude' // Claude ACP
   | 'gemini' // Google Gemini ACP
+  | 'custom-gemini' // Custom Gemini CLI with message editing support
   | 'qwen' // Qwen Code ACP
   | 'iflow' // iFlow CLI ACP
   | 'codex' // OpenAI Codex MCP
@@ -231,6 +232,16 @@ export const ACP_BACKENDS_ALL: Record<AcpBackendAll, AcpBackendConfig> = {
     enabled: true, // ✅ OpenCode CLI，使用 `opencode acp` 启动
     supportsStreaming: false,
     acpArgs: ['acp'], // opencode 使用 acp 子命令
+  },
+  'custom-gemini': {
+    id: 'custom-gemini',
+    name: 'Gemini Custom Agent',
+    cliCommand: 'custom-agent',
+    defaultCliPath: 'npx @google/gemini-cli-custom-agent',
+    authRequired: true,
+    enabled: true, // ✅ Custom Gemini CLI with message editing, save/resume support
+    supportsStreaming: true,
+    acpArgs: ['--experimental-acp'], // Uses standard ACP args
   },
   custom: {
     id: 'custom',
