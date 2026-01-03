@@ -14,8 +14,8 @@
 // 全部后端类型定义 - 包括暂时不支持的
 export type AcpBackendAll =
   | 'claude' // Claude ACP
-  | 'gemini' // Google Gemini ACP
-  | 'custom-gemini' // Custom Gemini CLI with message editing support
+  | 'gemini' // Google Gemini ACP (external CLI)
+  | 'flux' // Flux CLI (custom Gemini agent with editing support)
   | 'qwen' // Qwen Code ACP
   | 'iflow' // iFlow CLI ACP
   | 'codex' // OpenAI Codex MCP
@@ -55,10 +55,10 @@ function generatePotentialAcpClis(): PotentialAcpCli[] {
   // Must be called after ACP_BACKENDS_ALL is defined, so use lazy initialization
   return Object.entries(ACP_BACKENDS_ALL)
     .filter(([id, config]) => {
-      // 排除没有 CLI 命令的后端（gemini 内置，custom 用户配置）
-      // Exclude backends without CLI command (gemini is built-in, custom is user-configured)
+      // 排除没有 CLI 命令的后端（custom 用户配置）
+      // Exclude backends without CLI command (custom is user-configured)
       if (!config.cliCommand) return false;
-      if (id === 'gemini' || id === 'custom') return false;
+      if (id === 'custom') return false;
       return config.enabled;
     })
     .map(([id, config]) => ({
@@ -166,10 +166,10 @@ export const ACP_BACKENDS_ALL: Record<AcpBackendAll, AcpBackendConfig> = {
   },
   gemini: {
     id: 'gemini',
-    name: 'Google CLI',
+    name: 'Gemini (External)',
     cliCommand: 'gemini',
     authRequired: true,
-    enabled: false,
+    enabled: true, // ✅ External Gemini CLI (v24+)
     supportsStreaming: true,
   },
   qwen: {
@@ -233,15 +233,14 @@ export const ACP_BACKENDS_ALL: Record<AcpBackendAll, AcpBackendConfig> = {
     supportsStreaming: false,
     acpArgs: ['acp'], // opencode 使用 acp 子命令
   },
-  'custom-gemini': {
-    id: 'custom-gemini',
-    name: 'Gemini Custom Agent',
-    cliCommand: 'custom-agent',
-    defaultCliPath: 'npx @google/gemini-cli-custom-agent',
+  flux: {
+    id: 'flux',
+    name: 'Flux CLI',
+    cliCommand: 'flux',
     authRequired: true,
-    enabled: true, // ✅ Custom Gemini CLI with message editing, save/resume support
+    enabled: true, // ✅ Flux CLI (custom Gemini agent with editing support)
     supportsStreaming: true,
-    acpArgs: ['--experimental-acp'], // Uses standard ACP args
+    // No acpArgs needed - flux is already a pure JSON-RPC server
   },
   custom: {
     id: 'custom',

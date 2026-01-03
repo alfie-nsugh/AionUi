@@ -12,7 +12,14 @@
  * Handles window minimize, maximize, close and other control operations
  */
 
-import { BrowserWindow } from 'electron';
+// Electron imports - may be undefined in web server mode
+let BrowserWindow: typeof import('electron').BrowserWindow | undefined;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  BrowserWindow = require('electron').BrowserWindow;
+} catch {
+  // Electron not available (running in standalone Node.js/web server mode)
+}
 import { ipcBridge } from '@/common';
 
 /**
@@ -21,7 +28,7 @@ import { ipcBridge } from '@/common';
  *
  * @param window - 要监听的 BrowserWindow 实例 / BrowserWindow instance to listen to
  */
-export function registerWindowMaximizeListeners(window: BrowserWindow): void {
+export function registerWindowMaximizeListeners(window: InstanceType<typeof import('electron').BrowserWindow>): void {
   // 当窗口最大化时通知渲染进程 / Notify renderer when window is maximized
   window.on('maximize', () => {
     ipcBridge.windowControls.maximizedChanged.emit({ isMaximized: true });
@@ -41,9 +48,14 @@ export function registerWindowMaximizeListeners(window: BrowserWindow): void {
  * Register IPC handlers to respond to window control requests from renderer process
  */
 export function initWindowControlsBridge(): void {
+  // Skip in non-Electron environment (web server mode)
+  if (!BrowserWindow) {
+    return;
+  }
+
   // 最小化窗口 / Minimize window
   ipcBridge.windowControls.minimize.provider(() => {
-    const window = BrowserWindow.getFocusedWindow();
+    const window = BrowserWindow!.getFocusedWindow();
     if (window) {
       window.minimize();
     }
@@ -52,7 +64,7 @@ export function initWindowControlsBridge(): void {
 
   // 最大化窗口 / Maximize window
   ipcBridge.windowControls.maximize.provider(() => {
-    const window = BrowserWindow.getFocusedWindow();
+    const window = BrowserWindow!.getFocusedWindow();
     if (window) {
       window.maximize();
     }
@@ -61,7 +73,7 @@ export function initWindowControlsBridge(): void {
 
   // 取消最大化窗口 / Unmaximize window
   ipcBridge.windowControls.unmaximize.provider(() => {
-    const window = BrowserWindow.getFocusedWindow();
+    const window = BrowserWindow!.getFocusedWindow();
     if (window) {
       window.unmaximize();
     }
@@ -70,7 +82,7 @@ export function initWindowControlsBridge(): void {
 
   // 关闭窗口 / Close window
   ipcBridge.windowControls.close.provider(() => {
-    const window = BrowserWindow.getFocusedWindow();
+    const window = BrowserWindow!.getFocusedWindow();
     if (window) {
       window.close();
     }
@@ -79,12 +91,12 @@ export function initWindowControlsBridge(): void {
 
   // 获取窗口是否最大化状态 / Get window maximized state
   ipcBridge.windowControls.isMaximized.provider(() => {
-    const window = BrowserWindow.getFocusedWindow();
+    const window = BrowserWindow!.getFocusedWindow();
     return Promise.resolve(window?.isMaximized() ?? false);
   });
 
   // 为所有已存在的窗口注册监听器 / Register listeners for all existing windows
-  const allWindows = BrowserWindow.getAllWindows();
+  const allWindows = BrowserWindow!.getAllWindows();
   allWindows.forEach((window) => {
     registerWindowMaximizeListeners(window);
   });

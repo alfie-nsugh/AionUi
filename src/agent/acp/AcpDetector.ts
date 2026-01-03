@@ -103,12 +103,15 @@ class AcpDetector {
       }
     }
 
-    // 如果检测到ACP工具，添加内置Gemini
+    // 如果检测到ACP工具，添加内置Gemini作为第一项
+    // Built-in Gemini is the default option when other ACP tools are available
     if (detected.length > 0) {
+      // Use 'gemini' as backend but with special name to distinguish from external CLI
+      // The UI will handle this based on cliPath being undefined
       detected.unshift({
         backend: 'gemini',
-        name: 'Gemini CLI',
-        cliPath: undefined,
+        name: 'Gemini (Built-in)',
+        cliPath: undefined, // Built-in uses internal implementation, not CLI
         acpArgs: undefined,
       });
     }

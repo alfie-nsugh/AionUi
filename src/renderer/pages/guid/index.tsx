@@ -126,6 +126,7 @@ const useModelList = () => {
 const AGENT_LOGO_MAP: Partial<Record<AcpBackend, string>> = {
   claude: ClaudeLogo,
   gemini: GeminiLogo,
+  flux: GeminiLogo,
   qwen: QwenLogo,
   codex: CodexLogo,
   iflow: IflowLogo,
@@ -197,7 +198,7 @@ const Guid: React.FC = () => {
   // 支持在初始化页展示 Codex（MCP）选项，先做 UI 占位
   // 对于自定义代理，使用 "custom:uuid" 格式来区分多个自定义代理
   // For custom agents, we store "custom:uuid" format to distinguish between multiple custom agents
-  const [selectedAgentKey, setSelectedAgentKey] = useState<string>('gemini');
+  const [selectedAgentKey, setSelectedAgentKey] = useState<string>('gemini:builtin');
   const [availableAgents, setAvailableAgents] = useState<Array<{ backend: AcpBackend; name: string; cliPath?: string; customAgentId?: string }>>();
 
   /**
@@ -206,8 +207,15 @@ const Guid: React.FC = () => {
    * Helper to get agent key for selection
    * Returns "custom:uuid" for custom agents, backend type for others
    */
-  const getAgentKey = (agent: { backend: AcpBackend; customAgentId?: string }) => {
-    return agent.backend === 'custom' && agent.customAgentId ? `custom:${agent.customAgentId}` : agent.backend;
+  const getAgentKey = (agent: { backend: AcpBackend; customAgentId?: string; cliPath?: string }) => {
+    if (agent.backend === 'custom' && agent.customAgentId) {
+      return `custom:${agent.customAgentId}`;
+    }
+    // Distinguish built-in vs external Gemini
+    if (agent.backend === 'gemini') {
+      return agent.cliPath ? 'gemini:external' : 'gemini:builtin';
+    }
+    return agent.backend;
   };
 
   /**
@@ -221,11 +229,19 @@ const Guid: React.FC = () => {
       const customAgentId = key.slice(7);
       return availableAgents?.find((a) => a.backend === 'custom' && a.customAgentId === customAgentId);
     }
+    if (key === 'gemini:builtin') {
+      return availableAgents?.find((a) => a.backend === 'gemini' && !a.cliPath);
+    }
+    if (key === 'gemini:external') {
+      return availableAgents?.find((a) => a.backend === 'gemini' && !!a.cliPath);
+    }
     return availableAgents?.find((a) => a.backend === key);
   };
 
   // 获取选中的后端类型（向后兼容）/ Get the selected backend type (for backward compatibility)
-  const selectedAgent = selectedAgentKey.startsWith('custom:') ? 'custom' : (selectedAgentKey as AcpBackend);
+  // 获取选中的后端类型（向后兼容）/ Get the selected backend type
+  // Handle compound keys like "custom:uuid" or "gemini:builtin"
+  const selectedAgent = (selectedAgentKey.includes(':') ? selectedAgentKey.split(':')[0] : selectedAgentKey) as AcpBackend;
   const [isPlusDropdownOpen, setIsPlusDropdownOpen] = useState(false);
   const [typewriterPlaceholder, setTypewriterPlaceholder] = useState('');
   const [_isTyping, setIsTyping] = useState(true);
@@ -312,11 +328,11 @@ const Guid: React.FC = () => {
   }, []);
 
   // 获取可用的 ACP agents - 基于全局标记位
+  // Now includes both built-in (cliPath=undefined) and external gemini (cliPath='gemini')
   const { data: availableAgentsData } = useSWR('acp.agents.available', async () => {
     const result = await ipcBridge.acpConversation.getAvailableAgents.invoke();
     if (result.success) {
-      // 过滤掉检测到的gemini命令，只保留内置Gemini
-      return result.data.filter((agent) => !(agent.backend === 'gemini' && agent.cliPath));
+      return result.data;
     }
     return [];
   });

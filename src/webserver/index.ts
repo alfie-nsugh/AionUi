@@ -247,6 +247,11 @@ export async function startWebServer(port: number, allowRemote = false, options?
   // Initialize default admin account
   const initialCredentials = await initializeDefaultAdmin();
 
+  // 初始化 ACP 检测器 - 检测可用的 CLI 工具
+  // Initialize ACP detector - detect available CLI tools
+  const { initializeAcpDetector } = await import('../process/bridge');
+  await initializeAcpDetector();
+
   // 配置中间件
   // Configure middleware
   setupBasicMiddleware(app);
@@ -304,6 +309,12 @@ export async function startWebServer(port: number, allowRemote = false, options?
           console.log(`\n   👉 Open this URL in your browser: ${urlToOpen}\n`);
         }
       }
+
+      // 初始化 IPC 桥接处理器
+      // Initialize IPC bridge handlers (must be before WebSocket adapter)
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { initAllBridges } = require('../process/bridge') as typeof import('../process/bridge');
+      initAllBridges();
 
       // 初始化 WebSocket 适配器
       // Initialize WebSocket adapter

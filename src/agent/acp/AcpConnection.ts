@@ -83,7 +83,7 @@ export class AcpConnection {
   public onFileOperation: (operation: { method: string; path: string; content?: string; sessionId: string }) => void = () => {};
 
   // 通用的后端连接方法
-  private async connectGenericBackend(backend: 'gemini' | 'custom-gemini' | 'qwen' | 'iflow' | 'goose' | 'auggie' | 'kimi' | 'opencode' | 'custom', cliPath: string, workingDir: string, acpArgs?: string[], customEnv?: Record<string, string>): Promise<void> {
+  private async connectGenericBackend(backend: 'gemini' | 'flux' | 'qwen' | 'iflow' | 'goose' | 'auggie' | 'kimi' | 'opencode' | 'custom', cliPath: string, workingDir: string, acpArgs?: string[], customEnv?: Record<string, string>): Promise<void> {
     const config = createGenericSpawnConfig(cliPath, workingDir, acpArgs, customEnv);
     this.child = spawn(config.command, config.args, config.options);
     await this.setupChildProcessHandlers(backend);
@@ -105,7 +105,7 @@ export class AcpConnection {
         break;
 
       case 'gemini':
-      case 'custom-gemini':
+      case 'flux':
       case 'qwen':
       case 'iflow':
       case 'goose':
