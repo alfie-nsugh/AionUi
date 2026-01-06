@@ -585,6 +585,17 @@ export class AcpConnection {
     });
   }
 
+  /**
+   * Call a custom RPC method on the backend
+   * Used for extension methods like commands/list
+   */
+  async callMethod<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
+    if (!this.isConnected) {
+      throw new Error('Not connected to ACP backend');
+    }
+    return await this.sendRequest<T>(method, params);
+  }
+
   disconnect(): void {
     if (this.child) {
       this.child.kill();

@@ -3,6 +3,7 @@
  * Standalone WebUI backend launcher (no Electron window required).
  * Designed for browser-only development flows.
  */
+import 'dotenv/config'; // Load .env file from AionUi root
 import path from 'path';
 import { startWebServer } from '../src/webserver';
 import { SERVER_CONFIG } from '../src/webserver/config/constants';

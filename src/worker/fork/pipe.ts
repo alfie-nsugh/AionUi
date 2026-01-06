@@ -58,6 +58,12 @@ class Deferred {
 }
 
 type THandler = (data: any, deferred?: Deferred) => void;
+const getMessagePayload = (event: any) => {
+  if (event && typeof event === 'object' && 'data' in event) {
+    return (event as { data: any }).data;
+  }
+  return event;
+};
 
 export class Pipe {
   listener: {
@@ -67,10 +73,25 @@ export class Pipe {
   constructor(master = false) {
     if (!master) {
       // 接受主进程消息
-      if (process.parentPort) {
+      if (process.parentPort?.on) {
         process.parentPort.on('message', (event) => {
-          const { type, data, pipeId } = event.data || {};
+          const payload = getMessagePayload(event);
+          const { type, data, pipeId } = payload || {};
           // console.log("--------------->from main message", event.data);
+          if (type) {
+            const deferred = this.deferred(pipeId);
+            if (pipeId) {
+              deferred.pipe(this.call.bind(this)).catch((error: Error) => {
+                console.error('Failed to pipe deferred call:', error);
+              });
+            }
+            this.emit(type, data, deferred);
+          }
+        });
+      } else if (typeof process.on === 'function') {
+        process.on('message', (event) => {
+          const payload = getMessagePayload(event);
+          const { type, data, pipeId } = payload || {};
           if (type) {
             const deferred = this.deferred(pipeId);
             if (pipeId) {
@@ -125,15 +146,23 @@ export class Pipe {
       console.log('---主进程已关闭', name, '执行失败！!');
       return;
     }
-    if (!process.parentPort?.postMessage) {
-      console.error('---非子线程，无法使用主线程事件机制');
+    if (process.parentPort?.postMessage) {
+      process.parentPort.postMessage({
+        type: name,
+        data: data,
+        ...extPrams,
+      });
       return;
     }
-    process.parentPort.postMessage({
-      type: name,
-      data: data,
-      ...extPrams,
-    });
+    if (typeof process.send === 'function') {
+      process.send({
+        type: name,
+        data: data,
+        ...extPrams,
+      });
+      return;
+    }
+    console.error('---非子线程，无法使用主线程事件机制');
   }
   // 向主线程发起通知,并建立响应机制
   callPromise<T = any>(name: string, data: any) {

@@ -77,4 +77,41 @@ export function initAcpConversationBridge(): void {
       };
     }
   });
+
+  // Slash command completions - routes to the ACP connection if available
+  ipcBridge.acpConversation.completeCommand.provider(async ({ sessionId, partial }) => {
+    try {
+      // If no sessionId, return a static list of commands (no backend call possible)
+      if (!sessionId) {
+        // Return static commands for the main page (no active session)
+        const staticCommands = [
+          { name: '/help', description: 'Show available commands', category: 'built-in' },
+          { name: '/copy', description: 'Copy last response to clipboard', category: 'built-in' },
+          { name: '/chat save', description: 'Save the current conversation', category: 'built-in' },
+          { name: '/chat resume', description: 'Resume a saved conversation', category: 'built-in' },
+          { name: '/chat list', description: 'List saved checkpoints', category: 'built-in' },
+          { name: '/chat delete', description: 'Delete a saved checkpoint', category: 'built-in' },
+        ];
+
+        const lowerPartial = partial.toLowerCase();
+        const filtered = staticCommands.filter((c) => c.name.toLowerCase().startsWith(lowerPartial));
+        return { success: true, data: { suggestions: filtered } };
+      }
+
+      // Get the task/conversation to access its ACP connection
+      const task = WorkerManage.getTaskById(sessionId) as AcpAgentManager;
+      if (!task || task.type !== 'acp') {
+        return { success: false, msg: 'ACP session not found' };
+      }
+
+      // Call the ACP connection's commands/complete RPC
+      const result = await task.completeCommand(partial);
+      return { success: true, data: { suggestions: result } };
+    } catch (error) {
+      return {
+        success: false,
+        msg: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
 }

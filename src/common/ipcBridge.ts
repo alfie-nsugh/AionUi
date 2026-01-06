@@ -116,6 +116,8 @@ export const acpConversation = {
   getAvailableAgents: bridge.buildProvider<IBridgeResponse<Array<{ backend: AcpBackend; name: string; cliPath?: string; customAgentId?: string }>>, void>('acp.get-available-agents'),
   checkEnv: bridge.buildProvider<{ env: Record<string, string> }, void>('acp.check.env'),
   refreshCustomAgents: bridge.buildProvider<IBridgeResponse, void>('acp.refresh-custom-agents'),
+  // Slash command completions for autocomplete
+  completeCommand: bridge.buildProvider<IBridgeResponse<{ suggestions: Array<{ name: string; description: string; category: string; text?: string; isArgument?: boolean }> }>, { sessionId?: string; partial: string }>('acp.complete-command'),
   // clearAllCache: bridge.buildProvider<IBridgeResponse<{ details?: any }>, void>('acp.clear.all.cache'),
 };
 

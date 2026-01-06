@@ -168,6 +168,18 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData> {
     await this.bootstrap;
     await this.agent.confirmMessage(data);
   }
+
+  /**
+   * Get slash command completions from the ACP backend
+   */
+  async completeCommand(partial: string): Promise<Array<{ name: string; description: string; category: string; text?: string; isArgument?: boolean }>> {
+    await this.bootstrap;
+
+    // Call the commands/complete RPC on the ACP connection
+    const result = await this.agent.callMethod<{ partial: string; sessionId?: string }, { suggestions: Array<{ name: string; description: string; category: string; text?: string; isArgument?: boolean }> }>('commands/complete', { partial, sessionId: this.conversation_id });
+
+    return result?.suggestions ?? [];
+  }
 }
 
 export default AcpAgentManager;

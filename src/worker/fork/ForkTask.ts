@@ -13,6 +13,8 @@
 import { uuid } from '@/renderer/utils/common';
 import type { UtilityProcess } from 'electron';
 import { app, utilityProcess } from 'electron';
+import type { ChildProcess } from 'child_process';
+import { fork as nodeFork } from 'child_process';
 import { Pipe } from './pipe';
 
 /**
@@ -24,7 +26,7 @@ import { Pipe } from './pipe';
  * so aioncli-core can find WASM files
  */
 function getWorkerCwd(): string {
-  if (app.isPackaged) {
+  if (app?.isPackaged) {
     // 打包环境: app.getAppPath() 返回 .../Resources/app.asar
     // 我们需要 .../Resources/app.asar.unpacked 目录
     // Packaged: app.getAppPath() returns .../Resources/app.asar
@@ -40,7 +42,7 @@ function getWorkerCwd(): string {
 export class ForkTask<Data> extends Pipe {
   protected path = '';
   protected data: Data;
-  protected fcp: UtilityProcess | undefined;
+  protected fcp: UtilityProcess | ChildProcess | undefined;
   private killFn: () => void;
   private enableFork: boolean;
   constructor(path: string, data: Data, enableFork = true) {
@@ -64,12 +66,13 @@ export class ForkTask<Data> extends Pipe {
     // 传递 cwd 确保 worker 可以正确解析 node_modules 路径 (用于加载 WASM 文件等)
     // Pass cwd to ensure worker can correctly resolve node_modules paths (for WASM files etc.)
     const workerCwd = getWorkerCwd();
-    const fcp = utilityProcess.fork(this.path, [], {
-      cwd: workerCwd,
-    });
+    const canUseUtilityProcess = typeof (utilityProcess as { fork?: unknown })?.fork === 'function';
+    const fcp = canUseUtilityProcess ? utilityProcess.fork(this.path, [], { cwd: workerCwd }) : nodeFork(this.path, [], { cwd: workerCwd });
     // 接受子进程发送的消息
-    fcp.on('message', (e: IForkData) => {
+    fcp.on('message', (event: IForkData | { data?: IForkData }) => {
       // console.log("---------接受来子进程消息>", e);
+      const e = (event as { data?: IForkData }).data ?? (event as IForkData);
+      if (!e) return;
       // 接爱子进程消息
       if (e.type === 'complete') {
         fcp.kill();
@@ -119,7 +122,17 @@ export class ForkTask<Data> extends Pipe {
   // 向子进程发送回调
   postMessage(type: string, data: any, extPrams: Record<string, any> = {}) {
     if (!this.fcp) throw new Error('fork task not enabled');
-    this.fcp.postMessage({ type, data, ...extPrams });
+    const payload = { type, data, ...extPrams };
+    const fcp = this.fcp as UtilityProcess | ChildProcess;
+    if (typeof (fcp as UtilityProcess).postMessage === 'function') {
+      (fcp as UtilityProcess).postMessage(payload);
+      return;
+    }
+    if (typeof (fcp as ChildProcess).send === 'function') {
+      (fcp as ChildProcess).send(payload);
+      return;
+    }
+    throw new Error('fork task IPC not available');
   }
 }
 

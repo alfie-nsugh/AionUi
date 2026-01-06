@@ -293,6 +293,7 @@ const SendBox: React.FC<{
               overflowWrap: 'break-word',
             }}
             onChange={(v) => {
+              console.log('[SendBox] onChange called:', v.slice(0, 20));
               setInput(v);
             }}
             onPaste={onPaste}

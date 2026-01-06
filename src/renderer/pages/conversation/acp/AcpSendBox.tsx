@@ -22,6 +22,8 @@ import HorizontalFileList from '@/renderer/components/HorizontalFileList';
 import { usePreviewContext } from '@/renderer/pages/conversation/preview';
 import { useLatestRef } from '@/renderer/hooks/useLatestRef';
 import { useAutoTitle } from '@/renderer/hooks/useAutoTitle';
+import { useSlashCommands } from '@/renderer/hooks/useSlashCommands';
+import SlashCommandAutocomplete from '@/renderer/components/SlashCommandAutocomplete';
 
 const useAcpSendBoxDraft = getSendBoxDraftHook('acp', {
   _type: 'acp',
@@ -174,6 +176,69 @@ const AcpSendBox: React.FC<{
     setAtPath,
     setUploadFile,
   });
+
+  // Create fetchCompletions callback to call backend
+  const fetchBackendCompletions = useCallback(
+    async (input: string) => {
+      try {
+        const result = await ipcBridge.acpConversation.completeCommand.invoke({
+          sessionId: conversation_id,
+          partial: input,
+        });
+        if (result.success && result.data?.suggestions) {
+          return result.data.suggestions.map((s) => ({
+            name: s.name,
+            description: s.description,
+            category: s.category,
+            text: s.text,
+            isArgument: s.isArgument,
+          }));
+        }
+        return [];
+      } catch (error) {
+        console.warn('[AcpSendBox] Failed to fetch backend completions:', error);
+        return [];
+      }
+    },
+    [conversation_id]
+  );
+
+  // Slash command autocomplete (only for Flux backend)
+  const { suggestions, showAutocomplete, handleInputChange, selectCommand, closeAutocomplete, highlightIndex, highlightUp, highlightDown, getHighlightedCommand } = useSlashCommands(backend, { fetchCompletions: fetchBackendCompletions });
+
+  // Handle content change - also update slash command suggestions
+  const handleContentChange = useCallback(
+    (newContent: string) => {
+      setContent(newContent);
+      handleInputChange(newContent);
+    },
+    [setContent, handleInputChange]
+  );
+
+  // Handle keyboard events for autocomplete navigation
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (!showAutocomplete) return;
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        highlightUp();
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        highlightDown();
+      } else if (e.key === 'Tab' || e.key === 'Enter') {
+        const highlighted = getHighlightedCommand();
+        if (highlighted) {
+          e.preventDefault();
+          const newContent = selectCommand(highlighted);
+          setContent(newContent);
+        }
+      } else if (e.key === 'Escape') {
+        closeAutocomplete();
+      }
+    },
+    [showAutocomplete, highlightUp, highlightDown, getHighlightedCommand, selectCommand, setContent, closeAutocomplete]
+  );
 
   // 注册预览面板添加到发送框的 handler
   // Register handler for adding text from preview panel to sendbox
@@ -344,89 +409,105 @@ const AcpSendBox: React.FC<{
         </div>
       )}
 
-      <SendBox
-        value={content}
-        onChange={setContent}
-        loading={running}
-        disabled={false}
-        placeholder={t('acp.sendbox.placeholder', { backend, defaultValue: `Send message to {{backend}}...` })}
-        onStop={() => {
-          return ipcBridge.conversation.stop.invoke({ conversation_id }).then(() => {});
-        }}
-        className='z-10'
-        onFilesAdded={handleFilesAdded}
-        supportedExts={allSupportedExts}
-        tools={
-          <Button
-            type='secondary'
-            shape='circle'
-            icon={<Plus theme='outline' size='14' strokeWidth={2} fill={iconColors.primary} />}
-            onClick={() => {
-              void ipcBridge.dialog.showOpen.invoke({ properties: ['openFile', 'multiSelections'] }).then((files) => {
-                if (files && files.length > 0) {
-                  setUploadFile([...uploadFile, ...files]);
-                }
-              });
+      {/* Slash command autocomplete dropdown - positioned relative to SendBox */}
+      <div className='relative w-full'>
+        {showAutocomplete && (
+          <SlashCommandAutocomplete
+            suggestions={suggestions}
+            highlightIndex={highlightIndex}
+            onSelect={(cmd) => {
+              const newContent = selectCommand(cmd);
+              setContent(newContent);
             }}
+            onClose={closeAutocomplete}
+            visible={showAutocomplete}
           />
-        }
-        prefix={
-          <>
-            {/* Files on top */}
-            {(uploadFile.length > 0 || atPath.some((item) => (typeof item === 'string' ? true : item.isFile))) && (
-              <HorizontalFileList>
-                {uploadFile.map((path) => (
-                  <FilePreview key={path} path={path} onRemove={() => setUploadFile(uploadFile.filter((v) => v !== path))} />
-                ))}
-                {atPath.map((item) => {
-                  const isFile = typeof item === 'string' ? true : item.isFile;
-                  const path = typeof item === 'string' ? item : item.path;
-                  if (isFile) {
-                    return (
-                      <FilePreview
-                        key={path}
-                        path={path}
-                        onRemove={() => {
-                          const newAtPath = atPath.filter((v) => (typeof v === 'string' ? v !== path : v.path !== path));
-                          emitter.emit('acp.selected.file', newAtPath);
-                          setAtPath(newAtPath);
-                        }}
-                      />
-                    );
+        )}
+
+        <SendBox
+          value={content}
+          onChange={handleContentChange}
+          loading={running}
+          disabled={false}
+          placeholder={t('acp.sendbox.placeholder', { backend, defaultValue: `Send message to {{backend}}...` })}
+          onStop={() => {
+            return ipcBridge.conversation.stop.invoke({ conversation_id }).then(() => {});
+          }}
+          className='z-10'
+          onFilesAdded={handleFilesAdded}
+          supportedExts={allSupportedExts}
+          tools={
+            <Button
+              type='secondary'
+              shape='circle'
+              icon={<Plus theme='outline' size='14' strokeWidth={2} fill={iconColors.primary} />}
+              onClick={() => {
+                void ipcBridge.dialog.showOpen.invoke({ properties: ['openFile', 'multiSelections'] }).then((files) => {
+                  if (files && files.length > 0) {
+                    setUploadFile([...uploadFile, ...files]);
                   }
-                  return null;
-                })}
-              </HorizontalFileList>
-            )}
-            {/* Folder tags below */}
-            {atPath.some((item) => (typeof item === 'string' ? false : !item.isFile)) && (
-              <div className='flex flex-wrap items-center gap-8px mb-8px'>
-                {atPath.map((item) => {
-                  if (typeof item === 'string') return null;
-                  if (!item.isFile) {
-                    return (
-                      <Tag
-                        key={item.path}
-                        color='blue'
-                        closable
-                        onClose={() => {
-                          const newAtPath = atPath.filter((v) => (typeof v === 'string' ? true : v.path !== item.path));
-                          emitter.emit('acp.selected.file', newAtPath);
-                          setAtPath(newAtPath);
-                        }}
-                      >
-                        {item.name}
-                      </Tag>
-                    );
-                  }
-                  return null;
-                })}
-              </div>
-            )}
-          </>
-        }
-        onSend={onSendHandler}
-      ></SendBox>
+                });
+              }}
+            />
+          }
+          prefix={
+            <>
+              {/* Files on top */}
+              {(uploadFile.length > 0 || atPath.some((item) => (typeof item === 'string' ? true : item.isFile))) && (
+                <HorizontalFileList>
+                  {uploadFile.map((path) => (
+                    <FilePreview key={path} path={path} onRemove={() => setUploadFile(uploadFile.filter((v) => v !== path))} />
+                  ))}
+                  {atPath.map((item) => {
+                    const isFile = typeof item === 'string' ? true : item.isFile;
+                    const path = typeof item === 'string' ? item : item.path;
+                    if (isFile) {
+                      return (
+                        <FilePreview
+                          key={path}
+                          path={path}
+                          onRemove={() => {
+                            const newAtPath = atPath.filter((v) => (typeof v === 'string' ? v !== path : v.path !== path));
+                            emitter.emit('acp.selected.file', newAtPath);
+                            setAtPath(newAtPath);
+                          }}
+                        />
+                      );
+                    }
+                    return null;
+                  })}
+                </HorizontalFileList>
+              )}
+              {/* Folder tags below */}
+              {atPath.some((item) => (typeof item === 'string' ? false : !item.isFile)) && (
+                <div className='flex flex-wrap items-center gap-8px mb-8px'>
+                  {atPath.map((item) => {
+                    if (typeof item === 'string') return null;
+                    if (!item.isFile) {
+                      return (
+                        <Tag
+                          key={item.path}
+                          color='blue'
+                          closable
+                          onClose={() => {
+                            const newAtPath = atPath.filter((v) => (typeof v === 'string' ? true : v.path !== item.path));
+                            emitter.emit('acp.selected.file', newAtPath);
+                            setAtPath(newAtPath);
+                          }}
+                        >
+                          {item.name}
+                        </Tag>
+                      );
+                    }
+                    return null;
+                  })}
+                </div>
+              )}
+            </>
+          }
+          onSend={onSendHandler}
+        ></SendBox>
+      </div>
     </div>
   );
 };

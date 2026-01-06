@@ -40,6 +40,8 @@ import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import useSWR from 'swr';
 import styles from './index.module.css';
+import { useSlashCommands } from '@/renderer/hooks/useSlashCommands';
+import SlashCommandAutocomplete from '@/renderer/components/SlashCommandAutocomplete';
 
 /**
  * 缓存Provider的可用模型列表，避免重复计算
@@ -326,6 +328,48 @@ const Guid: React.FC = () => {
   const handleTextareaBlur = useCallback(() => {
     setIsInputFocused(false);
   }, []);
+
+  // Slash command autocomplete (for Flux backend)
+  const { suggestions, showAutocomplete, handleInputChange: handleSlashInputChange, selectCommand, closeAutocomplete, highlightIndex, highlightUp, highlightDown, getHighlightedCommand } = useSlashCommands(selectedAgent);
+
+  // Wrap setInput to also trigger slash command filtering
+  const handleInputWithSlash = useCallback(
+    (value: string) => {
+      setInput(value);
+      handleSlashInputChange(value);
+    },
+    [handleSlashInputChange]
+  );
+
+  // Handle keyboard for autocomplete navigation
+  const handleAutocompleteKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (!showAutocomplete) return false;
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        highlightUp();
+        return true;
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        highlightDown();
+        return true;
+      } else if (e.key === 'Tab' || (e.key === 'Enter' && getHighlightedCommand())) {
+        const highlighted = getHighlightedCommand();
+        if (highlighted) {
+          e.preventDefault();
+          const newContent = selectCommand(highlighted);
+          setInput(newContent);
+          return true;
+        }
+      } else if (e.key === 'Escape') {
+        closeAutocomplete();
+        return true;
+      }
+      return false;
+    },
+    [showAutocomplete, highlightUp, highlightDown, getHighlightedCommand, selectCommand, closeAutocomplete]
+  );
 
   // 获取可用的 ACP agents - 基于全局标记位
   // Now includes both built-in (cliPath=undefined) and external gemini (cliPath='gemini')
@@ -670,7 +714,38 @@ const Guid: React.FC = () => {
             }}
             {...dragHandlers}
           >
-            <Input.TextArea rows={3} placeholder={typewriterPlaceholder || t('conversation.welcome.placeholder')} className={`text-16px focus:b-none rounded-xl !bg-transparent !b-none !resize-none !p-0 ${styles.lightPlaceholder}`} value={input} onChange={(v) => setInput(v)} onPaste={onPaste} onFocus={handleTextareaFocus} onBlur={handleTextareaBlur} {...compositionHandlers} onKeyDown={createKeyDownHandler(sendMessageHandler)}></Input.TextArea>
+            {/* Slash command autocomplete dropdown */}
+            {showAutocomplete && (
+              <div className='relative w-full mb-8px'>
+                <SlashCommandAutocomplete
+                  suggestions={suggestions}
+                  highlightIndex={highlightIndex}
+                  onSelect={(cmd) => {
+                    const newContent = selectCommand(cmd);
+                    setInput(newContent);
+                  }}
+                  onClose={closeAutocomplete}
+                  visible={showAutocomplete}
+                />
+              </div>
+            )}
+            <Input.TextArea
+              rows={3}
+              placeholder={typewriterPlaceholder || t('conversation.welcome.placeholder')}
+              className={`text-16px focus:b-none rounded-xl !bg-transparent !b-none !resize-none !p-0 ${styles.lightPlaceholder}`}
+              value={input}
+              onChange={(v) => handleInputWithSlash(v)}
+              onPaste={onPaste}
+              onFocus={handleTextareaFocus}
+              onBlur={handleTextareaBlur}
+              {...compositionHandlers}
+              onKeyDown={(e) => {
+                // First try autocomplete navigation
+                if (handleAutocompleteKeyDown(e)) return;
+                // Then do normal key handling
+                createKeyDownHandler(sendMessageHandler)(e);
+              }}
+            ></Input.TextArea>
             {files.length > 0 && (
               // 展示待发送的文件并允许取消 / Show pending files and allow cancellation
               <div className='flex flex-wrap items-center gap-8px mt-12px mb-12px'>

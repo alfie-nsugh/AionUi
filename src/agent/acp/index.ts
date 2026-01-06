@@ -837,4 +837,12 @@ export class AcpAgent {
       this.emitStatusMessage('error');
     }
   }
+
+  /**
+   * Call an arbitrary RPC method on the ACP connection
+   * Used for custom RPC calls like commands/complete
+   */
+  callMethod<TParams = unknown, TResult = unknown>(method: string, params?: TParams): Promise<TResult> {
+    return this.connection.callMethod<TResult>(method, params as Record<string, unknown>);
+  }
 }

@@ -1,0 +1,64 @@
+/**
+ * @license
+ * Copyright 2025 AionUi (aionui.com)
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+.slash-command-autocomplete {
+  position: relative;
+  width: 100%;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--color-bg-2);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+}
+
+.slash-command-category {
+  padding: 4px 0;
+}
+
+.slash-command-category:not(:last-child) {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.slash-command-category-header {
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.slash-command-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.slash-command-item:hover,
+.slash-command-item.highlighted {
+  background: var(--color-fill-2);
+}
+
+.slash-command-name {
+  font-family: var(--font-family-code);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-1);
+  white-space: nowrap;
+}
+
+.slash-command-desc {
+  font-size: 12px;
+  color: var(--color-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

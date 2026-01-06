@@ -13,7 +13,7 @@
     "webui:remote": "npm run cli -- --webui --remote",
     "webui:prod": "cross-env NODE_ENV=production electron-forge start -- --webui",
     "webui:prod:remote": "cross-env NODE_ENV=production electron-forge start -- --webui --remote",
-    "resetpass": "npm run cli -- --resetpass",
+    "resetpass": "cross-env TS_NODE_FILES=true TS_NODE_PROJECT=tsconfig.json npx ts-node -r tsconfig-paths/register scripts/resetpass.ts",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "dist": "tsx scripts/build-with-builder.cts",
