@@ -399,6 +399,12 @@ export class AcpAgent {
 
   private handleSessionUpdate(data: AcpSessionUpdate): void {
     try {
+      if (data.update?.sessionUpdate === 'ui_notice') {
+        const notice = data as import('@/types/acpTypes').UiNoticeUpdate;
+        this.emitNoticeMessage(notice.update);
+        return;
+      }
+
       // Intercept chrome-devtools navigation tools from session updates
       // 从会话更新中拦截 chrome-devtools 导航工具
       if (data.update?.sessionUpdate === 'tool_call') {
@@ -586,6 +592,25 @@ export class AcpAgent {
     };
 
     this.emitMessage(statusMessage);
+  }
+
+  private emitNoticeMessage(update: { message: string; level: 'info' | 'success' | 'warning' | 'error'; dismissible?: boolean }): void {
+    const noticeMessage: IResponseMessage = {
+      type: 'acp_notice',
+      conversation_id: this.id,
+      msg_id: uuid(),
+      data: {
+        message: update.message,
+        level: update.level,
+        dismissible: update.dismissible ?? true,
+      },
+    };
+
+    if (this.onSignalEvent) {
+      this.onSignalEvent(noticeMessage);
+    } else {
+      this.onStreamEvent(noticeMessage);
+    }
   }
 
   private emitPermissionRequest(data: AcpPermissionRequest): void {

@@ -123,8 +123,10 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData> {
   }> {
     try {
       await this.initAgent(this.options);
+      const trimmed = data.content.trim();
+      const isSlashCommand = trimmed.startsWith('/') && trimmed.length > 1;
       // Save user message to chat history ONLY after successful sending
-      if (data.msg_id && data.content) {
+      if (data.msg_id && data.content && !isSlashCommand) {
         const userMessage: TMessage = {
           id: data.msg_id,
           msg_id: data.msg_id,

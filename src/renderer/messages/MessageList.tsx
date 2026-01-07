@@ -8,6 +8,7 @@ import type { CodexToolCallUpdate, TMessage } from '@/common/chatLib';
 import { iconColors } from '@/renderer/theme/colors';
 import { Image } from '@arco-design/web-react';
 import { Down } from '@icon-park/react';
+import MessageAcpNotice from '@renderer/messages/acp/MessageAcpNotice';
 import MessageAcpPermission from '@renderer/messages/acp/MessageAcpPermission';
 import MessageAcpToolCall from '@renderer/messages/acp/MessageAcpToolCall';
 import MessageAgentStatus from '@renderer/messages/MessageAgentStatus';
@@ -56,6 +57,8 @@ const MessageItem: React.FC<{ message: TMessage }> = HOC((props) => {
       return <MessageToolGroup message={message}></MessageToolGroup>;
     case 'agent_status':
       return <MessageAgentStatus message={message}></MessageAgentStatus>;
+    case 'acp_notice':
+      return <MessageAcpNotice message={message}></MessageAcpNotice>;
     case 'acp_permission':
       return <MessageAcpPermission message={message}></MessageAcpPermission>;
     case 'acp_tool_call':

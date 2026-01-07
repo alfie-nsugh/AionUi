@@ -337,6 +337,8 @@ const AcpSendBox: React.FC<{
     const msg_id = uuid();
 
     message = processMessageWithFiles(message);
+    const trimmed = message.trim();
+    const isSlashCommand = trimmed.startsWith('/') && trimmed.length > 1;
 
     // 立即清空输入框，避免用户误以为消息没发送
     // Clear input immediately to avoid user thinking message wasn't sent
@@ -354,7 +356,9 @@ const AcpSendBox: React.FC<{
         conversation_id,
         files: uploadFile,
       });
-      void checkAndUpdateTitle(conversation_id, message);
+      if (!isSlashCommand) {
+        void checkAndUpdateTitle(conversation_id, message);
+      }
       emitter.emit('chat.history.refresh');
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : String(error);

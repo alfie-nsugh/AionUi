@@ -479,6 +479,16 @@ export interface HistorySnapshotUpdate extends BaseSessionUpdate {
   };
 }
 
+// UI-only notice update
+export interface UiNoticeUpdate extends BaseSessionUpdate {
+  update: {
+    sessionUpdate: 'ui_notice';
+    message: string;
+    level: 'info' | 'success' | 'warning' | 'error';
+    dismissible?: boolean;
+  };
+}
+
 export interface HistorySnapshotToolCall {
   id: string;
   name: string;
@@ -491,7 +501,7 @@ export interface HistorySnapshotToolCall {
 }
 
 // Union type for all session updates
-export type AcpSessionUpdate = AgentMessageChunkUpdate | AgentThoughtChunkUpdate | ToolCallUpdate | ToolCallUpdateStatus | PlanUpdate | AvailableCommandsUpdate | UserMessageChunkUpdate | HistorySnapshotUpdate;
+export type AcpSessionUpdate = AgentMessageChunkUpdate | AgentThoughtChunkUpdate | ToolCallUpdate | ToolCallUpdateStatus | PlanUpdate | AvailableCommandsUpdate | UserMessageChunkUpdate | HistorySnapshotUpdate | UiNoticeUpdate;
 // | CurrentModeUpdate;
 
 // 当前的ACP权限请求接口

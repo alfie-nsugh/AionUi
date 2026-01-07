@@ -51,13 +51,13 @@ const MessageAcpPermission: React.FC<MessageAcpPermissionProps> = React.memo(({ 
   const [isResponding, setIsResponding] = useState(false);
   const [hasResponded, setHasResponded] = useState(false);
 
-  const handleConfirm = async () => {
-    if (hasResponded || !selected) return;
+  const sendDecision = async (optionId: string) => {
+    if (hasResponded || !optionId) return;
 
     setIsResponding(true);
     try {
       const invokeData = {
-        confirmKey: selected,
+        confirmKey: optionId,
         msg_id: message.id,
         conversation_id: message.conversation_id,
         callId: toolCall?.toolCallId || message.id, // 使用 toolCallId 或 message.id 作为 fallback
@@ -100,26 +100,43 @@ const MessageAcpPermission: React.FC<MessageAcpPermissionProps> = React.memo(({ 
         {!hasResponded && (
           <>
             <div className='mt-10px'>{t('messages.chooseAction')}</div>
-            <Radio.Group direction='vertical' size='mini' value={selected} onChange={setSelected}>
-              {options && options.length > 0 ? (
-                options.map((option, index) => {
+            {options && options.length > 0 && options.length <= 2 ? (
+              <div className='flex gap-8px flex-wrap'>
+                {options.map((option, index) => {
                   const optionName = option?.name || `${t('messages.option')} ${index + 1}`;
                   const optionId = option?.optionId || `option_${index}`;
+                  const isPrimary = option?.kind?.startsWith('allow') || optionId === 'confirm';
                   return (
-                    <Radio key={optionId} value={optionId}>
-                      {optionName}
-                    </Radio>
+                    <Button key={optionId} type={isPrimary ? 'primary' : 'outline'} size='mini' disabled={isResponding} onClick={() => sendDecision(optionId)}>
+                      {isResponding ? t('messages.processing') : optionName}
+                    </Button>
                   );
-                })
-              ) : (
-                <Text type='secondary'>{t('messages.noOptionsAvailable')}</Text>
-              )}
-            </Radio.Group>
-            <div className='flex justify-start pl-20px'>
-              <Button type='primary' size='mini' disabled={!selected || isResponding} onClick={handleConfirm}>
-                {isResponding ? t('messages.processing') : t('messages.confirm')}
-              </Button>
-            </div>
+                })}
+              </div>
+            ) : (
+              <>
+                <Radio.Group direction='vertical' size='mini' value={selected} onChange={setSelected}>
+                  {options && options.length > 0 ? (
+                    options.map((option, index) => {
+                      const optionName = option?.name || `${t('messages.option')} ${index + 1}`;
+                      const optionId = option?.optionId || `option_${index}`;
+                      return (
+                        <Radio key={optionId} value={optionId}>
+                          {optionName}
+                        </Radio>
+                      );
+                    })
+                  ) : (
+                    <Text type='secondary'>{t('messages.noOptionsAvailable')}</Text>
+                  )}
+                </Radio.Group>
+                <div className='flex justify-start pl-20px'>
+                  <Button type='primary' size='mini' disabled={!selected || isResponding} onClick={() => selected && sendDecision(selected)}>
+                    {isResponding ? t('messages.processing') : t('messages.confirm')}
+                  </Button>
+                </div>
+              </>
+            )}
           </>
         )}
 
