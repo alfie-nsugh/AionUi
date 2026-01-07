@@ -28,6 +28,7 @@ interface StreamBuffer {
   currentContent: string;
   chunkCount: number;
   lastDbUpdate: number;
+  position?: TMessage['position'];
   updateTimer?: NodeJS.Timeout;
 }
 
@@ -64,7 +65,7 @@ export class StreamingMessageBuffer {
    * 性能优化：批量写入而非每个 chunk 都写数据库
    * @param mode
    */
-  append(id: string, messageId: string, conversationId: string, chunk: string, mode: 'accumulate' | 'replace'): void {
+  append(id: string, messageId: string, conversationId: string, chunk: string, mode: 'accumulate' | 'replace', position?: TMessage['position']): void {
     (this as any).mode = mode;
     let buffer = this.buffers.get(messageId);
 
@@ -76,9 +77,13 @@ export class StreamingMessageBuffer {
         currentContent: chunk,
         chunkCount: 1,
         lastDbUpdate: Date.now(),
+        position,
       };
       this.buffers.set(messageId, buffer);
     } else {
+      if (position) {
+        buffer.position = position;
+      }
       // 根据模式累积或替换内容
       if (this.mode === 'accumulate') {
         buffer.currentContent += chunk;
@@ -111,6 +116,19 @@ export class StreamingMessageBuffer {
   }
 
   /**
+   * Clear all buffers for a specific conversation
+   */
+  clearConversation(conversationId: string): void {
+    for (const [messageId, buffer] of this.buffers.entries()) {
+      if (buffer.conversationId !== conversationId) continue;
+      if (buffer.updateTimer) {
+        clearTimeout(buffer.updateTimer);
+      }
+      this.buffers.delete(messageId);
+    }
+  }
+
+  /**
    * 刷新缓冲区到数据库
    *
    * @param id
@@ -131,7 +149,7 @@ export class StreamingMessageBuffer {
         type: 'text',
         content: { content: buffer.currentContent },
         status: 'pending',
-        position: 'left',
+        position: buffer.position ?? 'left',
         createdAt: Date.now(),
       };
 

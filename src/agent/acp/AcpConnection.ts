@@ -534,16 +534,22 @@ export class AcpConnection {
     return result;
   }
 
-  async newSession(cwd: string = process.cwd()): Promise<AcpResponse> {
+  async newSession(cwd: string = process.cwd(), conversationId?: string): Promise<AcpResponse> {
     // Normalize workspace-relative paths:
     // Agents such as qwen already run with `workingDir` as their process cwd.
     // Sending the absolute path again makes some CLIs treat it as a nested relative path.
     const normalizedCwd = this.normalizeCwdForAgent(cwd);
 
-    const response = await this.sendRequest<AcpResponse & { sessionId?: string }>('session/new', {
+    const params: Record<string, unknown> = {
       cwd: normalizedCwd,
       mcpServers: [] as unknown[],
-    });
+    };
+
+    if (conversationId && (this.backend === 'custom' || this.backend === 'flux')) {
+      params['conversationId'] = conversationId;
+    }
+
+    const response = await this.sendRequest<AcpResponse & { sessionId?: string }>('session/new', params);
 
     this.sessionId = response.sessionId;
     return response;

@@ -7,7 +7,7 @@ import { transformMessage } from '@/common/chatLib';
 import type { IConfirmMessageParams, IResponseMessage } from '@/common/ipcBridge';
 import { parseError, uuid } from '@/common/utils';
 import { ProcessConfig } from '../initStorage';
-import { addMessage, addOrUpdateMessage, nextTickToLocalFinish } from '../message';
+import { addMessage, addOrUpdateMessage, clearMessages, nextTickToLocalFinish } from '../message';
 import BaseAgentManager from './BaseAgentManager';
 import { handlePreviewOpenEvent } from '../utils/previewUtils';
 
@@ -90,6 +90,12 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData> {
           // 处理 preview_open 事件（chrome-devtools 导航拦截）
           if (handlePreviewOpenEvent(v)) {
             return; // Don't process further / 不需要继续处理
+          }
+
+          if (v.type === 'clear_history') {
+            clearMessages(v.conversation_id);
+            ipcBridge.acpConversation.responseStream.emit(v);
+            return;
           }
 
           if (v.type !== 'thought') {

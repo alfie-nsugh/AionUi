@@ -168,7 +168,7 @@ export class AcpAgent {
       await this.performAuthentication();
       // 避免重复创建会话：仅当尚无活动会话时再创建
       if (!this.connection.hasActiveSession) {
-        await this.connection.newSession(this.extra.workspace);
+        await this.connection.newSession(this.extra.workspace, this.id);
       }
       this.emitStatusMessage('session_active');
     } catch (error) {
@@ -446,6 +446,17 @@ export class AcpAgent {
         }
       }
 
+      // Special handling for history_snapshot - clear existing messages first
+      if (data.update?.sessionUpdate === 'history_snapshot') {
+        // Emit a clear_history event before the restored messages
+        this.onStreamEvent({
+          type: 'clear_history',
+          conversation_id: this.id,
+          data: null,
+          msg_id: uuid(),
+        });
+      }
+
       const messages = this.adapter.convertSessionUpdate(data);
 
       for (let i = 0; i < messages.length; i++) {
@@ -676,8 +687,14 @@ export class AcpAgent {
     // Map TMessage types to backend response types
     switch (message.type) {
       case 'text':
-        responseMessage.type = 'content';
-        responseMessage.data = message.content.content;
+        // Use position to determine if this is a user message or AI message
+        if (message.position === 'right') {
+          responseMessage.type = 'user_content';
+          responseMessage.data = message.content.content;
+        } else {
+          responseMessage.type = 'content';
+          responseMessage.data = message.content.content;
+        }
         break;
       case 'agent_status':
         responseMessage.type = 'agent_status';
@@ -704,6 +721,11 @@ export class AcpAgent {
         break;
       case 'acp_tool_call': {
         responseMessage.type = 'acp_tool_call';
+        responseMessage.data = message.content;
+        break;
+      }
+      case 'tool_group': {
+        responseMessage.type = 'tool_group';
         responseMessage.data = message.content;
         break;
       }
@@ -810,7 +832,7 @@ export class AcpAgent {
 
       // 先尝试直接创建session以判断是否已鉴权
       try {
-        await this.connection.newSession(this.extra.workspace);
+        await this.connection.newSession(this.extra.workspace, this.id);
         this.emitStatusMessage('authenticated');
         return;
       } catch (_err) {
@@ -826,7 +848,7 @@ export class AcpAgent {
 
       // 预热后重试创建session
       try {
-        await this.connection.newSession(this.extra.workspace);
+        await this.connection.newSession(this.extra.workspace, this.id);
         this.emitStatusMessage('authenticated');
         return;
       } catch (error) {

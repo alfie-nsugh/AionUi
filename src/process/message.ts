@@ -43,6 +43,28 @@ export const addMessage = (conversation_id: string, message: TMessage): void => 
 };
 
 /**
+ * Clear all messages for a conversation
+ * Used when resuming a checkpoint to replace current chat with stored history
+ */
+export const clearMessages = (conversation_id: string): void => {
+  try {
+    const db = getDatabase();
+    const result = db.getConversationMessages(conversation_id, 0, 10000);
+    if (result.data) {
+      for (const message of result.data) {
+        db.deleteMessage(message.id);
+      }
+      console.log(`[Message] Cleared ${result.data.length} messages for conversation ${conversation_id}`);
+    }
+    streamingBuffer.clearConversation(conversation_id);
+    executePendingCallbacks();
+  } catch (error) {
+    console.error('[Message] Failed to clear messages:', error);
+    executePendingCallbacks();
+  }
+};
+
+/**
  * Update messages in the database using a transform function
  * This loads all messages, applies the transform, and saves them back
  */
@@ -142,11 +164,12 @@ export const addOrUpdateMessage = (conversation_id: string, message: TMessage, b
       const db = getDatabase();
       // Ensure conversation exists in database
       await ensureConversationExists(db, conversation_id);
-      if (message.type === 'text' && message.msg_id) {
+      const supportsStreaming = backend ? (ACP_BACKENDS_ALL[backend]?.supportsStreaming ?? false) : false;
+      if (message.type === 'text' && message.msg_id && supportsStreaming) {
         const incomingMsg = message as IMessageText;
         const content = incomingMsg.content.content;
         const messageId = message.msg_id || '';
-        streamingBuffer.append(message.id, messageId, conversation_id, content, backend ? 'accumulate' : ACP_BACKENDS_ALL[backend].supportsStreaming ? 'accumulate' : 'replace');
+        streamingBuffer.append(message.id, messageId, conversation_id, content, 'accumulate', message.position);
       } else if (message.type === 'tool_group' || message.type === 'tool_call' || message.type === 'codex_tool_call' || message.type === 'acp_tool_call') {
         // Complex message types that need composeMessage logic
         // These are less frequent, so loading all messages of this type is acceptable

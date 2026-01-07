@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { IMessageAcpToolCall, IMessageText, TMessage } from '@/common/chatLib';
+import type { IMessageAcpToolCall, IMessageText, IMessageToolGroup, TMessage } from '@/common/chatLib';
 import { uuid } from '@/common/utils';
-import type { AcpBackend, AcpSessionUpdate, AgentMessageChunkUpdate, AgentThoughtChunkUpdate, AvailableCommandsUpdate, PlanUpdate, ToolCallUpdate, ToolCallUpdateStatus } from '@/types/acpTypes';
+import type { AcpBackend, AcpSessionUpdate, AgentMessageChunkUpdate, AgentThoughtChunkUpdate, AvailableCommandsUpdate, HistorySnapshotToolCall, PlanUpdate, ToolCallUpdate, ToolCallUpdateStatus } from '@/types/acpTypes';
 
 /**
  * Adapter class to convert ACP messages to AionUI message format
@@ -110,6 +110,58 @@ export class AcpAdapter {
         break;
       }
 
+      case 'history_snapshot': {
+        // Handle restored chat history (e.g., from /chat resume)
+        const historyUpdate = update as {
+          sessionUpdate: 'history_snapshot';
+          messages: Array<{
+            role: 'user' | 'model';
+            content: string;
+            toolCalls?: HistorySnapshotToolCall[];
+            timestamp?: number;
+          }>;
+        };
+        if (historyUpdate.messages) {
+          const baseTime = Date.now();
+          let offset = 0;
+          for (const msg of historyUpdate.messages) {
+            const messageBase = Number.isFinite(msg.timestamp ?? NaN) ? (msg.timestamp as number) : baseTime;
+            const createdAt = messageBase + offset;
+            offset += 1;
+            if (msg.content && msg.content.trim().length > 0) {
+              const historyMessage: TMessage = {
+                id: uuid(),
+                msg_id: uuid(),
+                conversation_id: this.conversationId,
+                createdAt,
+                type: 'text',
+                position: msg.role === 'user' ? 'right' : 'left',
+                content: {
+                  content: msg.content,
+                },
+              };
+              messages.push(historyMessage);
+            }
+
+            if (msg.toolCalls && msg.toolCalls.length > 0) {
+              const toolGroupMessage: TMessage = {
+                id: uuid(),
+                msg_id: uuid(),
+                conversation_id: this.conversationId,
+                createdAt: messageBase + offset,
+                type: 'tool_group',
+                position: 'left',
+                content: msg.toolCalls.map((toolCall) => this.mapHistoryToolCall(toolCall)),
+              };
+              offset += 1;
+              messages.push(toolGroupMessage);
+            }
+          }
+        }
+        this.resetMessageTracking();
+        break;
+      }
+
       default: {
         // Handle unexpected session update types
         const unknownUpdate = update as { sessionUpdate?: string };
@@ -192,6 +244,38 @@ export class AcpAdapter {
 
     this.activeToolCalls.set(toolCallId, acpToolCallMessage);
     return acpToolCallMessage;
+  }
+
+  private mapHistoryToolStatus(status: HistorySnapshotToolCall['status']): 'Executing' | 'Success' | 'Error' | 'Canceled' | 'Pending' | 'Confirming' {
+    switch (status) {
+      case 'executing':
+        return 'Executing';
+      case 'success':
+        return 'Success';
+      case 'error':
+        return 'Error';
+      case 'cancelled':
+        return 'Canceled';
+      case 'awaiting_approval':
+        return 'Confirming';
+      case 'validating':
+      case 'scheduled':
+      default:
+        return 'Pending';
+    }
+  }
+
+  private mapHistoryToolCall(toolCall: HistorySnapshotToolCall): IMessageToolGroup['content'][number] {
+    const description = toolCall.description ?? JSON.stringify(toolCall.args ?? {});
+    return {
+      callId: toolCall.id,
+      name: toolCall.displayName ?? toolCall.name,
+      description,
+      renderOutputAsMarkdown: toolCall.renderOutputAsMarkdown ?? false,
+      resultDisplay: toolCall.resultDisplay,
+      status: this.mapHistoryToolStatus(toolCall.status),
+      confirmationDetails: undefined,
+    };
   }
 
   /**

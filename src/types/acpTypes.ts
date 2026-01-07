@@ -466,8 +466,32 @@ export interface CurrentModeUpdate extends BaseSessionUpdate {
   };
 }
 
+// History snapshot update (for /chat resume)
+export interface HistorySnapshotUpdate extends BaseSessionUpdate {
+  update: {
+    sessionUpdate: 'history_snapshot';
+    messages: Array<{
+      role: 'user' | 'model';
+      content: string;
+      toolCalls?: HistorySnapshotToolCall[];
+      timestamp?: number;
+    }>;
+  };
+}
+
+export interface HistorySnapshotToolCall {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+  status: 'validating' | 'scheduled' | 'executing' | 'success' | 'error' | 'cancelled' | 'awaiting_approval';
+  displayName?: string;
+  description?: string;
+  resultDisplay?: string;
+  renderOutputAsMarkdown?: boolean;
+}
+
 // Union type for all session updates
-export type AcpSessionUpdate = AgentMessageChunkUpdate | AgentThoughtChunkUpdate | ToolCallUpdate | ToolCallUpdateStatus | PlanUpdate | AvailableCommandsUpdate | UserMessageChunkUpdate;
+export type AcpSessionUpdate = AgentMessageChunkUpdate | AgentThoughtChunkUpdate | ToolCallUpdate | ToolCallUpdateStatus | PlanUpdate | AvailableCommandsUpdate | UserMessageChunkUpdate | HistorySnapshotUpdate;
 // | CurrentModeUpdate;
 
 // 当前的ACP权限请求接口

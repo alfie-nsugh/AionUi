@@ -8,7 +8,7 @@ import ShimmerText from '@/renderer/components/ShimmerText';
 import ThoughtDisplay, { type ThoughtData } from '@/renderer/components/ThoughtDisplay';
 import { getSendBoxDraftHook, type FileOrFolderItem } from '@/renderer/hooks/useSendBoxDraft';
 import { createSetUploadFile, useSendBoxFiles } from '@/renderer/hooks/useSendBoxFiles';
-import { useAddOrUpdateMessage } from '@/renderer/messages/hooks';
+import { useAddOrUpdateMessage, useClearMessages } from '@/renderer/messages/hooks';
 import { allSupportedExts } from '@/renderer/services/FileService';
 import { emitter, useAddEventListener } from '@/renderer/utils/emitter';
 import { mergeFileSelectionItems } from '@/renderer/utils/fileSelection';
@@ -34,6 +34,7 @@ const useAcpSendBoxDraft = getSendBoxDraftHook('acp', {
 
 const useAcpMessage = (conversation_id: string) => {
   const addOrUpdateMessage = useAddOrUpdateMessage();
+  const clearMessages = useClearMessages();
   const [running, setRunning] = useState(false);
   const [thought, setThought] = useState<ThoughtData>({
     description: '',
@@ -47,7 +48,6 @@ const useAcpMessage = (conversation_id: string) => {
       if (conversation_id !== message.conversation_id) {
         return;
       }
-      const transformedMessage = transformMessage(message);
       switch (message.type) {
         case 'thought':
           setThought(message.data as ThoughtData);
@@ -63,7 +63,7 @@ const useAcpMessage = (conversation_id: string) => {
         case 'content':
           // Clear thought when final answer arrives
           setThought({ subject: '', description: '' });
-          addOrUpdateMessage(transformedMessage);
+          addOrUpdateMessage(transformMessage(message));
           break;
         case 'agent_status': {
           // Update ACP/Agent status
@@ -78,26 +78,30 @@ const useAcpMessage = (conversation_id: string) => {
               setRunning(false);
             }
           }
-          addOrUpdateMessage(transformedMessage);
+          addOrUpdateMessage(transformMessage(message));
           break;
         }
         case 'user_content':
-          addOrUpdateMessage(transformedMessage);
+          addOrUpdateMessage(transformMessage(message));
           break;
         case 'acp_permission':
-          addOrUpdateMessage(transformedMessage);
+          addOrUpdateMessage(transformMessage(message));
           break;
         case 'error':
           // Stop AI processing state when error occurs
           setAiProcessing(false);
-          addOrUpdateMessage(transformedMessage);
+          addOrUpdateMessage(transformMessage(message));
+          break;
+        case 'clear_history':
+          // Clear all messages before loading restored history (from /chat resume)
+          clearMessages();
           break;
         default:
-          addOrUpdateMessage(transformedMessage);
+          addOrUpdateMessage(transformMessage(message));
           break;
       }
     },
-    [conversation_id, addOrUpdateMessage, setThought, setRunning, setAiProcessing, setAcpStatus]
+    [conversation_id, addOrUpdateMessage, clearMessages, setThought, setRunning, setAiProcessing, setAcpStatus]
   );
 
   useEffect(() => {

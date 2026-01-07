@@ -29,6 +29,18 @@ export const useAddOrUpdateMessage = () => {
   };
 };
 
+/**
+ * Hook to clear all messages in the current chat
+ * Used when resuming a checkpoint to replace current chat with stored history
+ */
+export const useClearMessages = () => {
+  const update = useUpdateMessageList();
+  return () => {
+    update(() => []);
+    console.log('[useClearMessages] Cleared all messages in chat');
+  };
+};
+
 export const useMessageLstCache = (key: string) => {
   const update = useUpdateMessageList();
   useEffect(() => {
