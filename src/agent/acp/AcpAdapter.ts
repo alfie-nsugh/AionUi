@@ -124,9 +124,9 @@ export class AcpAdapter {
         };
         if (historyUpdate.messages) {
           const baseTime = Date.now();
+          let snapshotOffset = 0;
           for (const msg of historyUpdate.messages) {
-            // Use historyIndex for ordering if available, otherwise fallback to baseTime
-            const orderBase = typeof msg.historyIndex === 'number' ? msg.historyIndex * 1000 : baseTime;
+            const orderBase = baseTime + snapshotOffset;
             const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
 
             // Only show text message if it has real content (not just [Tool call] placeholder)
@@ -147,20 +147,23 @@ export class AcpAdapter {
                 historyIndex: msg.historyIndex,
               };
               messages.push(historyMessage);
+              snapshotOffset += 1;
             }
 
             if (hasToolCalls) {
+              const toolTimestamp = baseTime + snapshotOffset;
               const toolGroupMessage: TMessage = {
                 id: uuid(),
                 msg_id: uuid(),
                 conversation_id: this.conversationId,
-                createdAt: orderBase + 1, // Slightly after text for same historyIndex
+                createdAt: toolTimestamp,
                 type: 'tool_group',
                 position: 'left',
                 content: msg.toolCalls.map((toolCall) => this.mapHistoryToolCall(toolCall)),
                 historyIndex: msg.historyIndex,
               };
               messages.push(toolGroupMessage);
+              snapshotOffset += 1;
             }
           }
         }

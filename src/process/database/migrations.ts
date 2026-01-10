@@ -162,9 +162,94 @@ const migration_v6: IMigration = {
 };
 
 /**
+ * Migration v6 -> v7: Add order_key to messages table
+ * Provide stable ordering independent of timestamps
+ */
+const migration_v7: IMigration = {
+  version: 7,
+  name: 'Add order_key to messages',
+  up: (db) => {
+    const tableInfo = db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>;
+    const hasOrderKey = tableInfo.some((col) => col.name === 'order_key');
+
+    if (!hasOrderKey) {
+      db.exec(`ALTER TABLE messages ADD COLUMN order_key INTEGER;`);
+      console.log('[Migration v7] Added order_key column to messages table');
+    } else {
+      console.log('[Migration v7] order_key column already exists, skipping');
+    }
+
+    const rows = db
+      .prepare(
+        `
+          SELECT id, conversation_id
+          FROM messages
+          ORDER BY conversation_id, created_at, rowid
+        `
+      )
+      .all() as Array<{ id: string; conversation_id: string }>;
+
+    const updateStmt = db.prepare('UPDATE messages SET order_key = ? WHERE id = ?');
+    let currentConversation = '';
+    let counter = 0;
+
+    for (const row of rows) {
+      if (row.conversation_id !== currentConversation) {
+        currentConversation = row.conversation_id;
+        counter = 0;
+      }
+      counter += 1;
+      updateStmt.run(counter, row.id);
+    }
+
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_messages_order_key ON messages(order_key);
+      CREATE INDEX IF NOT EXISTS idx_messages_conversation_order ON messages(conversation_id, order_key);
+    `);
+    console.log('[Migration v7] Backfilled order_key and added indexes');
+  },
+  down: (db) => {
+    db.exec(`
+      CREATE TABLE messages_backup AS
+      SELECT id, conversation_id, msg_id, type, content, position, status, created_at
+      FROM messages;
+
+      DROP TABLE messages;
+
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        msg_id TEXT,
+        type TEXT NOT NULL,
+        content TEXT NOT NULL,
+        position TEXT CHECK(position IN ('left', 'right', 'center', 'pop')),
+        status TEXT CHECK(status IN ('finish', 'pending', 'error', 'work')),
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO messages (id, conversation_id, msg_id, type, content, position, status, created_at)
+      SELECT id, conversation_id, msg_id, type, content, position, status, created_at
+      FROM messages_backup;
+
+      DROP TABLE messages_backup;
+
+      CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
+      CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+      CREATE INDEX IF NOT EXISTS idx_messages_type ON messages(type);
+      CREATE INDEX IF NOT EXISTS idx_messages_msg_id ON messages(msg_id);
+      CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_messages_conv_created_desc ON messages(conversation_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_messages_type_created ON messages(type, created_at DESC);
+    `);
+    console.log('[Migration v7] Rolled back: Removed order_key column from messages table');
+  },
+};
+
+/**
  * All migrations in order
  */
-export const ALL_MIGRATIONS: IMigration[] = [migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6];
+export const ALL_MIGRATIONS: IMigration[] = [migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6, migration_v7];
 
 /**
  * Get migrations needed to upgrade from one version to another

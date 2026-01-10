@@ -29,6 +29,8 @@ interface StreamBuffer {
   chunkCount: number;
   lastDbUpdate: number;
   position?: TMessage['position'];
+  orderKey?: number;
+  createdAt?: number;
   updateTimer?: NodeJS.Timeout;
 }
 
@@ -65,7 +67,7 @@ export class StreamingMessageBuffer {
    * 性能优化：批量写入而非每个 chunk 都写数据库
    * @param mode
    */
-  append(id: string, messageId: string, conversationId: string, chunk: string, mode: 'accumulate' | 'replace', position?: TMessage['position']): void {
+  append(id: string, messageId: string, conversationId: string, chunk: string, mode: 'accumulate' | 'replace', position?: TMessage['position'], metadata?: { orderKey?: number; createdAt?: number }): void {
     (this as any).mode = mode;
     let buffer = this.buffers.get(messageId);
 
@@ -78,11 +80,19 @@ export class StreamingMessageBuffer {
         chunkCount: 1,
         lastDbUpdate: Date.now(),
         position,
+        orderKey: metadata?.orderKey,
+        createdAt: metadata?.createdAt,
       };
       this.buffers.set(messageId, buffer);
     } else {
       if (position) {
         buffer.position = position;
+      }
+      if (buffer.orderKey === undefined && metadata?.orderKey !== undefined) {
+        buffer.orderKey = metadata.orderKey;
+      }
+      if (buffer.createdAt === undefined && metadata?.createdAt !== undefined) {
+        buffer.createdAt = metadata.createdAt;
       }
       // 根据模式累积或替换内容
       if (this.mode === 'accumulate') {
@@ -113,6 +123,18 @@ export class StreamingMessageBuffer {
         this.flushBuffer(id, messageId, false);
       }, this.UPDATE_INTERVAL);
     }
+  }
+
+  has(messageId: string): boolean {
+    return this.buffers.has(messageId);
+  }
+
+  getOrderKey(messageId: string): number | undefined {
+    return this.buffers.get(messageId)?.orderKey;
+  }
+
+  getCreatedAt(messageId: string): number | undefined {
+    return this.buffers.get(messageId)?.createdAt;
   }
 
   /**
@@ -150,7 +172,8 @@ export class StreamingMessageBuffer {
         content: { content: buffer.currentContent },
         status: 'pending',
         position: buffer.position ?? 'left',
-        createdAt: Date.now(),
+        createdAt: buffer.createdAt ?? Date.now(),
+        orderKey: buffer.orderKey,
       };
 
       // Check if message exists in database

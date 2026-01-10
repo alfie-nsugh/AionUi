@@ -13,11 +13,49 @@ import { streamingBuffer } from './database/StreamingMessageBuffer';
 import type { AcpBackend } from '@/types/acpTypes';
 import { ACP_BACKENDS_ALL } from '@/types/acpTypes';
 
+const orderKeyCounters = new Map<string, number>();
+
+const setMessageOrdering = (conversation_id: string, message: TMessage): void => {
+  if (!message.createdAt) {
+    message.createdAt = Date.now();
+  }
+
+  if (message.orderKey !== undefined && message.orderKey !== null) {
+    const current = orderKeyCounters.get(conversation_id);
+    if (current === undefined || message.orderKey > current) {
+      orderKeyCounters.set(conversation_id, message.orderKey);
+    }
+    return;
+  }
+
+  const db = getDatabase();
+  if (message.msg_id) {
+    const existing = db.getMessageByMsgId(conversation_id, message.msg_id);
+    if (existing.success && existing.data?.orderKey !== undefined) {
+      message.orderKey = existing.data.orderKey;
+      const current = orderKeyCounters.get(conversation_id);
+      if (current === undefined || message.orderKey > current) {
+        orderKeyCounters.set(conversation_id, message.orderKey);
+      }
+      return;
+    }
+  }
+  let current = orderKeyCounters.get(conversation_id);
+  if (current === undefined) {
+    current = db.getMaxMessageOrderKey(conversation_id);
+  }
+  const next = current + 1;
+  orderKeyCounters.set(conversation_id, next);
+  message.orderKey = next;
+};
+
 /**
  * Add a new message to the database
  * Wraps async work inside an IIFE to keep call sites synchronous.
  */
 export const addMessage = (conversation_id: string, message: TMessage): void => {
+  setMessageOrdering(conversation_id, message);
+
   void (async () => {
     try {
       const db = getDatabase();
@@ -57,6 +95,7 @@ export const clearMessages = (conversation_id: string): void => {
       console.log(`[Message] Cleared ${result.data.length} messages for conversation ${conversation_id}`);
     }
     streamingBuffer.clearConversation(conversation_id);
+    orderKeyCounters.delete(conversation_id);
     executePendingCallbacks();
   } catch (error) {
     console.error('[Message] Failed to clear messages:', error);
@@ -159,17 +198,35 @@ export const addOrUpdateMessage = (conversation_id: string, message: TMessage, b
     return;
   }
 
+  const supportsStreaming = backend ? (ACP_BACKENDS_ALL[backend]?.supportsStreaming ?? false) : false;
+  if (message.type === 'text' && message.msg_id && supportsStreaming) {
+    const existingOrderKey = streamingBuffer.getOrderKey(message.msg_id);
+    const existingCreatedAt = streamingBuffer.getCreatedAt(message.msg_id);
+    if (existingOrderKey !== undefined) {
+      message.orderKey = existingOrderKey;
+    } else {
+      setMessageOrdering(conversation_id, message);
+    }
+    if (!message.createdAt && existingCreatedAt !== undefined) {
+      message.createdAt = existingCreatedAt;
+    }
+  } else {
+    setMessageOrdering(conversation_id, message);
+  }
+
   void (async () => {
     try {
       const db = getDatabase();
       // Ensure conversation exists in database
       await ensureConversationExists(db, conversation_id);
-      const supportsStreaming = backend ? (ACP_BACKENDS_ALL[backend]?.supportsStreaming ?? false) : false;
       if (message.type === 'text' && message.msg_id && supportsStreaming) {
         const incomingMsg = message as IMessageText;
         const content = incomingMsg.content.content;
         const messageId = message.msg_id || '';
-        streamingBuffer.append(message.id, messageId, conversation_id, content, 'accumulate', message.position);
+        streamingBuffer.append(message.id, messageId, conversation_id, content, 'accumulate', message.position, {
+          orderKey: message.orderKey,
+          createdAt: message.createdAt,
+        });
       } else if (message.type === 'tool_group' || message.type === 'tool_call' || message.type === 'codex_tool_call' || message.type === 'acp_tool_call') {
         // Complex message types that need composeMessage logic
         // These are less frequent, so loading all messages of this type is acceptable

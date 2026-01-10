@@ -240,6 +240,9 @@ export interface IResponseMessage {
   data: unknown;
   msg_id: string;
   conversation_id: string;
+  createdAt?: number;
+  orderKey?: number;
+  historyIndex?: number;
 }
 
 interface IBridgeResponse<D = {}> {

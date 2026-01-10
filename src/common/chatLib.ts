@@ -81,6 +81,10 @@ interface IMessage<T extends TMessageType, Content extends Record<string, any>> 
    */
   createdAt?: number;
   /**
+   * Stable ordering key for message sequencing
+   */
+  orderKey?: number;
+  /**
    * Backend history index for editable messages
    */
   historyIndex?: number;
@@ -276,14 +280,21 @@ export type TMessage = IMessageText | IMessageTips | IMessageToolCall | IMessage
  * @description 将后端返回的消息转换为前端消息
  * */
 export const transformMessage = (message: IResponseMessage): TMessage => {
+  const base = {
+    id: uuid(),
+    msg_id: message.msg_id,
+    conversation_id: message.conversation_id,
+    createdAt: message.createdAt,
+    orderKey: message.orderKey,
+    historyIndex: message.historyIndex,
+  };
+
   switch (message.type) {
     case 'error': {
       return {
-        id: uuid(),
+        ...base,
         type: 'tips',
-        msg_id: message.msg_id,
         position: 'center',
-        conversation_id: message.conversation_id,
         content: {
           content: message.data as string,
           type: 'error',
@@ -293,11 +304,9 @@ export const transformMessage = (message: IResponseMessage): TMessage => {
     case 'content':
     case 'user_content': {
       return {
-        id: uuid(),
+        ...base,
         type: 'text',
-        msg_id: message.msg_id,
         position: message.type === 'content' ? 'left' : 'right',
-        conversation_id: message.conversation_id,
         content: {
           content: message.data as string,
         },
@@ -305,10 +314,8 @@ export const transformMessage = (message: IResponseMessage): TMessage => {
     }
     case 'tool_call': {
       return {
-        id: uuid(),
+        ...base,
         type: 'tool_call',
-        msg_id: message.msg_id,
-        conversation_id: message.conversation_id,
         position: 'left',
         content: message.data as any,
       };
@@ -316,69 +323,55 @@ export const transformMessage = (message: IResponseMessage): TMessage => {
     case 'tool_group': {
       return {
         type: 'tool_group',
-        id: uuid(),
-        msg_id: message.msg_id,
-        conversation_id: message.conversation_id,
+        ...base,
         content: message.data as any,
       };
     }
     case 'agent_status': {
       return {
-        id: uuid(),
+        ...base,
         type: 'agent_status',
-        msg_id: message.msg_id,
         position: 'center',
-        conversation_id: message.conversation_id,
         content: message.data as any,
       };
     }
     case 'acp_notice': {
       return {
-        id: uuid(),
+        ...base,
         type: 'acp_notice',
-        msg_id: message.msg_id,
         position: 'center',
-        conversation_id: message.conversation_id,
         content: message.data as any,
       };
     }
     case 'acp_permission': {
       return {
-        id: uuid(),
+        ...base,
         type: 'acp_permission',
-        msg_id: message.msg_id,
         position: 'left',
-        conversation_id: message.conversation_id,
         content: message.data as any,
       };
     }
     case 'acp_tool_call': {
       return {
-        id: uuid(),
+        ...base,
         type: 'acp_tool_call',
-        msg_id: message.msg_id,
         position: 'left',
-        conversation_id: message.conversation_id,
         content: message.data as any,
       };
     }
     case 'codex_permission': {
       return {
-        id: uuid(),
+        ...base,
         type: 'codex_permission',
-        msg_id: message.msg_id,
         position: 'left',
-        conversation_id: message.conversation_id,
         content: message.data as any,
       };
     }
     case 'codex_tool_call': {
       return {
-        id: uuid(),
+        ...base,
         type: 'codex_tool_call',
-        msg_id: message.msg_id,
         position: 'left',
-        conversation_id: message.conversation_id,
         content: message.data as any,
       };
     }

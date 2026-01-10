@@ -70,6 +70,7 @@ export function initSchema(db: Database.Database): void {
       position TEXT CHECK(position IN ('left', 'right', 'center', 'pop')),
       status TEXT CHECK(status IN ('finish', 'pending', 'error', 'work')),
       created_at INTEGER NOT NULL,
+      order_key INTEGER NOT NULL,
       FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
     );
 
@@ -79,6 +80,15 @@ export function initSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_messages_msg_id ON messages(msg_id);
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id, created_at);
   `);
+
+  const messageColumns = db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>;
+  const hasOrderKey = messageColumns.some((col) => col.name === 'order_key');
+  if (hasOrderKey) {
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_messages_order_key ON messages(order_key);
+      CREATE INDEX IF NOT EXISTS idx_messages_conversation_order ON messages(conversation_id, order_key);
+    `);
+  }
 
   console.log('[Database] Schema initialized successfully');
 }
@@ -108,4 +118,4 @@ export function setDatabaseVersion(db: Database.Database, version: number): void
  * Current database schema version
  * Update this when adding new migrations in migrations.ts
  */
-export const CURRENT_DB_VERSION = 6;
+export const CURRENT_DB_VERSION = 7;

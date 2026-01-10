@@ -707,6 +707,9 @@ export class AcpAgent {
       data: null, // Will be set in switch statement
       conversation_id: this.id,
       msg_id: message.msg_id || message.id, // 使用消息自己的 msg_id
+      createdAt: message.createdAt,
+      orderKey: message.orderKey,
+      historyIndex: message.historyIndex,
     };
 
     // Map TMessage types to backend response types

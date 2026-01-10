@@ -527,16 +527,31 @@ export class AionUIDatabase {
    * ==================
    */
 
+  getMaxMessageOrderKey(conversationId: string): number {
+    const result = this.db.prepare('SELECT COALESCE(MAX(order_key), 0) as max_order_key FROM messages WHERE conversation_id = ?').get(conversationId) as { max_order_key?: number };
+    return result?.max_order_key ?? 0;
+  }
+
+  private getNextMessageOrderKey(conversationId: string): number {
+    return this.getMaxMessageOrderKey(conversationId) + 1;
+  }
+
   insertMessage(message: TMessage): IQueryResult<TMessage> {
     try {
+      if (message.orderKey === undefined || message.orderKey === null) {
+        message.orderKey = this.getNextMessageOrderKey(message.conversation_id);
+      }
+      if (!message.createdAt) {
+        message.createdAt = Date.now();
+      }
       const row = messageToRow(message);
 
       const stmt = this.db.prepare(`
-        INSERT INTO messages (id, conversation_id, msg_id, type, content, position, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO messages (id, conversation_id, msg_id, type, content, position, status, created_at, order_key)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
-      stmt.run(row.id, row.conversation_id, row.msg_id, row.type, row.content, row.position, row.status, row.created_at);
+      stmt.run(row.id, row.conversation_id, row.msg_id, row.type, row.content, row.position, row.status, row.created_at, row.order_key);
 
       return {
         success: true,
@@ -562,7 +577,7 @@ export class AionUIDatabase {
             SELECT *
             FROM messages
             WHERE conversation_id = ?
-            ORDER BY created_at ASC LIMIT ?
+            ORDER BY order_key ASC LIMIT ?
             OFFSET ?
           `
         )
