@@ -8,7 +8,7 @@ import { ipcBridge } from '@/common';
 import type { CodexToolCallUpdate, TMessage } from '@/common/chatLib';
 import { useConversationContextSafe } from '@/renderer/context/ConversationContext';
 import { iconColors } from '@/renderer/theme/colors';
-import { Image, Input, Message, Modal } from '@arco-design/web-react';
+import { Button, Image, Input, Message, Modal } from '@arco-design/web-react';
 import { Down } from '@icon-park/react';
 import MessageAcpNotice from '@renderer/messages/acp/MessageAcpNotice';
 import MessageAcpPermission from '@renderer/messages/acp/MessageAcpPermission';
@@ -28,11 +28,30 @@ import MessageText from './MessagetText';
 import MessageContextMenu from './MessageContextMenu';
 
 type TurnDiffContent = Extract<CodexToolCallUpdate, { subtype: 'turn_diff' }>;
+type ToolCallEditTarget = {
+  callId: string;
+  name: string;
+  callHistoryIndex?: number;
+  responseHistoryIndex?: number;
+};
 
 const HISTORY_MESSAGE_OFFSET = 1; // gemini-cli initial environment context
 
+type EditTokenPart = {
+  tokenId: string;
+  part: Record<string, unknown>;
+};
+
 const isEditableTextMessage = (message: TMessage): boolean => {
   return message.type === 'text' && (message.position === 'left' || message.position === 'right');
+};
+
+const isEditableToolGroup = (message: TMessage): boolean => {
+  return message.type === 'tool_group' && typeof message.historyIndex === 'number';
+};
+
+const isEditableMessage = (message: TMessage): boolean => {
+  return isEditableTextMessage(message) || isEditableToolGroup(message);
 };
 
 const getMessagePreview = (message: TMessage, fallbackLabel: string): string => {
@@ -48,6 +67,50 @@ const getMessagePreview = (message: TMessage, fallbackLabel: string): string => 
   const flattened = rawText.replace(/\s+/g, ' ');
   const snippet = flattened.length > 40 ? `${flattened.slice(0, 40)}...` : flattened;
   return `"${snippet}"`;
+};
+
+const getPartLabel = (part: Record<string, unknown>): string => {
+  const typedPart = part as {
+    inlineData?: { mimeType?: string };
+    fileData?: { fileUri?: string; mimeType?: string };
+    functionCall?: { name?: string };
+    functionResponse?: { name?: string };
+    executableCode?: unknown;
+    codeExecutionResult?: unknown;
+    thought?: boolean;
+  };
+
+  if (typedPart.functionCall) {
+    return `functionCall (${typedPart.functionCall.name ?? 'unknown'})`;
+  }
+  if (typedPart.functionResponse) {
+    return `functionResponse (${typedPart.functionResponse.name ?? 'unknown'})`;
+  }
+  if (typedPart.inlineData) {
+    return `inlineData (${typedPart.inlineData.mimeType ?? 'data'})`;
+  }
+  if (typedPart.fileData) {
+    return `fileData (${typedPart.fileData.fileUri ?? typedPart.fileData.mimeType ?? 'uri'})`;
+  }
+  if (typedPart.executableCode) {
+    return 'executableCode';
+  }
+  if (typedPart.codeExecutionResult) {
+    return 'codeExecutionResult';
+  }
+  if (typedPart.thought) {
+    return 'thought';
+  }
+  return 'part';
+};
+
+const getInlineDataPreviewUrl = (part: Record<string, unknown>): string | null => {
+  const inlineData = (part as { inlineData?: { mimeType?: string; data?: string } }).inlineData;
+  if (!inlineData?.data) {
+    return null;
+  }
+  const mimeType = inlineData.mimeType || 'application/octet-stream';
+  return `data:${mimeType};base64,${inlineData.data}`;
 };
 
 // 图片预览上下文 Image preview context
@@ -121,13 +184,25 @@ const MessageList: React.FC<{ className?: string }> = () => {
   const [editTokenSetId, setEditTokenSetId] = useState<string | undefined>();
   const [editFormat, setEditFormat] = useState<string | undefined>();
   const [editMessageId, setEditMessageId] = useState<string | null>(null);
+  const [editTokenParts, setEditTokenParts] = useState<EditTokenPart[]>([]);
+  const [editPartOverrides, setEditPartOverrides] = useState<Record<string, Record<string, unknown>>>({});
+  const [partModalVisible, setPartModalVisible] = useState(false);
+  const [activePartTokenId, setActivePartTokenId] = useState<string | null>(null);
+  const [activePartText, setActivePartText] = useState('');
+  const [activePartError, setActivePartError] = useState<string | null>(null);
+  const [activePartPreviewUrl, setActivePartPreviewUrl] = useState<string | null>(null);
+  const [activePartIsImage, setActivePartIsImage] = useState(false);
   const previousListLengthRef = useRef(list.length);
   const { t } = useTranslation();
 
-  const isEditableBackend = conversationContext?.type === 'acp' && (conversationContext.backend === 'flux' || conversationContext.backend === 'custom');
+  const editableBackendId = conversationContext?.backend ?? '';
+  const isEditableBackend = conversationContext?.type === 'acp' && (editableBackendId === 'flux' || editableBackendId === 'custom');
 
   const resolveHistoryIndex = useCallback(
     (message: TMessage): number | null => {
+      if (typeof message.historyIndex === 'number') {
+        return message.historyIndex;
+      }
       let ordinal = -1;
       for (const entry of list) {
         if (!isEditableTextMessage(entry)) {
@@ -189,6 +264,148 @@ const MessageList: React.FC<{ className?: string }> = () => {
     setIsUserScrolling(!atBottom);
   };
 
+  const getTokenPart = useCallback(
+    (tokenId: string): Record<string, unknown> | null => {
+      if (editPartOverrides[tokenId]) {
+        return editPartOverrides[tokenId];
+      }
+      const entry = editTokenParts.find((item) => item.tokenId === tokenId);
+      return entry?.part ?? null;
+    },
+    [editPartOverrides, editTokenParts]
+  );
+
+  const openPartEditor = useCallback(
+    (tokenId: string) => {
+      const part = getTokenPart(tokenId);
+      if (!part) {
+        messageApi.error(t('common.error', { defaultValue: 'Error' }));
+        return;
+      }
+
+      setActivePartTokenId(tokenId);
+      setActivePartText(JSON.stringify(part, null, 2));
+      setActivePartError(null);
+      setActivePartPreviewUrl(getInlineDataPreviewUrl(part));
+      setActivePartIsImage(Boolean((part as { inlineData?: unknown; fileData?: unknown }).inlineData || (part as { fileData?: unknown }).fileData));
+      setPartModalVisible(true);
+    },
+    [getTokenPart, messageApi, t]
+  );
+
+  const handlePartCancel = useCallback(() => {
+    setPartModalVisible(false);
+    setActivePartTokenId(null);
+    setActivePartText('');
+    setActivePartError(null);
+    setActivePartPreviewUrl(null);
+    setActivePartIsImage(false);
+  }, []);
+
+  const handlePartSave = useCallback(() => {
+    if (!activePartTokenId) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(activePartText) as Record<string, unknown>;
+      setEditPartOverrides((prev) => ({ ...prev, [activePartTokenId]: parsed }));
+      setEditTokenParts((prev) => prev.map((entry) => (entry.tokenId === activePartTokenId ? { ...entry, part: parsed } : entry)));
+      handlePartCancel();
+    } catch (error) {
+      setActivePartError(error instanceof Error ? error.message : 'Invalid JSON');
+    }
+  }, [activePartText, activePartTokenId, handlePartCancel]);
+
+  const handleReplaceImage = useCallback(async () => {
+    if (!activePartTokenId) {
+      return;
+    }
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(activePartText) as Record<string, unknown>;
+    } catch (error) {
+      setActivePartError(error instanceof Error ? error.message : 'Invalid JSON');
+      return;
+    }
+
+    const selection = await ipcBridge.dialog.showOpen.invoke({
+      properties: ['openFile'],
+      filters: [
+        {
+          name: 'Images',
+          extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'tif', 'tiff', 'avif'],
+        },
+      ],
+    });
+
+    if (!selection || selection.length === 0) {
+      return;
+    }
+
+    const dataUrl = await ipcBridge.fs.getImageBase64.invoke({ path: selection[0] });
+    const match = /^data:(.*?);base64,(.*)$/.exec(dataUrl);
+    const mimeType = match?.[1] || 'application/octet-stream';
+    const data = match?.[2] || '';
+
+    const updated = {
+      ...parsed,
+      inlineData: {
+        mimeType,
+        data,
+      },
+    };
+    if ('fileData' in updated) {
+      delete (updated as { fileData?: unknown }).fileData;
+    }
+
+    setActivePartText(JSON.stringify(updated, null, 2));
+    setActivePartPreviewUrl(`data:${mimeType};base64,${data}`);
+    setActivePartIsImage(true);
+    setActivePartError(null);
+  }, [activePartText, activePartTokenId]);
+
+  const startEdit = useCallback(
+    async (historyIndex: number, mode: 'inPlace' | 'fork', options?: { exactIndex?: boolean; messageId?: string }) => {
+      setEditMode(mode);
+      setEditMessageIndex(historyIndex);
+      setEditMessageId(options?.messageId ?? null);
+      setEditContent('');
+      setEditTokenSetId(undefined);
+      setEditFormat(undefined);
+      setEditTokenParts([]);
+      setEditPartOverrides({});
+      setEditModalVisible(true);
+      setEditLoading(true);
+
+      try {
+        const result = await ipcBridge.acpConversation.getEditableMessage.invoke({
+          conversation_id: conversationId,
+          messageIndex: historyIndex,
+          exactIndex: options?.exactIndex,
+        });
+
+        if (!result.success || !result.data) {
+          throw new Error(result.msg || 'Failed to load editable content.');
+        }
+
+        const resolvedIndex = typeof result.data.resolvedIndex === 'number' ? result.data.resolvedIndex : historyIndex;
+        setEditMessageIndex(resolvedIndex);
+        setEditContent(result.data.content ?? '');
+        setEditTokenSetId(result.data.tokenSetId);
+        setEditFormat(result.data.format);
+        setEditTokenParts(result.data.parts ?? []);
+      } catch (error) {
+        messageApi.error(error instanceof Error ? error.message : String(error));
+        setEditModalVisible(false);
+      } finally {
+        setEditLoading(false);
+      }
+    },
+    [conversationId, messageApi]
+  );
+
   const handleEdit = useCallback(
     async (message: TMessage, mode: 'inPlace' | 'fork') => {
       if (!isEditableBackend) {
@@ -201,46 +418,56 @@ const MessageList: React.FC<{ className?: string }> = () => {
         return;
       }
 
-      setEditMode(mode);
-      setEditMessageIndex(historyIndex);
-      setEditMessageId(message.id);
-      setEditContent('');
-      setEditTokenSetId(undefined);
-      setEditFormat(undefined);
-      setEditModalVisible(true);
-      setEditLoading(true);
-
-      try {
-        const result = await ipcBridge.acpConversation.getEditableMessage.invoke({
-          conversation_id: conversationId,
-          messageIndex: historyIndex,
-        });
-
-        if (!result.success || !result.data) {
-          throw new Error(result.msg || 'Failed to load editable content.');
-        }
-
-        setEditContent(result.data.content ?? '');
-        setEditTokenSetId(result.data.tokenSetId);
-        setEditFormat(result.data.format);
-      } catch (error) {
-        messageApi.error(error instanceof Error ? error.message : String(error));
-        setEditModalVisible(false);
-      } finally {
-        setEditLoading(false);
-      }
+      await startEdit(historyIndex, mode, { messageId: message.id });
     },
-    [conversationId, isEditableBackend, messageApi, resolveHistoryIndex, t]
+    [isEditableBackend, messageApi, resolveHistoryIndex, startEdit, t]
+  );
+
+  const handleEditToolCall = useCallback(
+    async (toolCall: ToolCallEditTarget) => {
+      if (!isEditableBackend) {
+        return;
+      }
+
+      if (typeof toolCall.callHistoryIndex !== 'number') {
+        messageApi.error(t('messages.editFailed', { defaultValue: 'Unable to edit this message.' }));
+        return;
+      }
+
+      await startEdit(toolCall.callHistoryIndex, 'inPlace', { exactIndex: true });
+    },
+    [isEditableBackend, messageApi, startEdit, t]
+  );
+
+  const handleEditToolResult = useCallback(
+    async (toolCall: ToolCallEditTarget) => {
+      if (!isEditableBackend) {
+        return;
+      }
+
+      if (typeof toolCall.responseHistoryIndex !== 'number') {
+        messageApi.error(t('messages.editFailed', { defaultValue: 'Unable to edit this message.' }));
+        return;
+      }
+
+      await startEdit(toolCall.responseHistoryIndex, 'inPlace', { exactIndex: true });
+    },
+    [isEditableBackend, messageApi, startEdit, t]
   );
 
   const handleEditConfirm = useCallback(async () => {
-    if (editMessageIndex === null || !editMessageId) {
+    if (editMessageIndex === null) {
       messageApi.error(t('messages.editFailed', { defaultValue: 'Unable to edit this message.' }));
       return;
     }
 
     setEditLoading(true);
     try {
+      const partOverrides = Object.entries(editPartOverrides).map(([tokenId, part]) => ({
+        tokenId,
+        part,
+      }));
+
       const result = await ipcBridge.acpConversation.editMessage.invoke({
         conversation_id: conversationId,
         messageIndex: editMessageIndex,
@@ -248,6 +475,7 @@ const MessageList: React.FC<{ className?: string }> = () => {
         mode: editMode,
         format: editFormat,
         tokenSetId: editTokenSetId,
+        partOverrides: partOverrides.length ? partOverrides : undefined,
       });
 
       if (!result.success) {
@@ -261,12 +489,14 @@ const MessageList: React.FC<{ className?: string }> = () => {
       setEditMessageId(null);
       setEditTokenSetId(undefined);
       setEditFormat(undefined);
+      setEditTokenParts([]);
+      setEditPartOverrides({});
     } catch (error) {
       messageApi.error(error instanceof Error ? error.message : String(error));
     } finally {
       setEditLoading(false);
     }
-  }, [conversationId, editContent, editFormat, editMessageId, editMessageIndex, editMode, editTokenSetId, messageApi, t]);
+  }, [conversationId, editContent, editFormat, editMessageIndex, editMode, editPartOverrides, editTokenSetId, messageApi, t]);
 
   const handleEditCancel = useCallback(() => {
     setEditModalVisible(false);
@@ -275,7 +505,10 @@ const MessageList: React.FC<{ className?: string }> = () => {
     setEditMessageId(null);
     setEditTokenSetId(undefined);
     setEditFormat(undefined);
-  }, []);
+    setEditTokenParts([]);
+    setEditPartOverrides({});
+    handlePartCancel();
+  }, [handlePartCancel]);
 
   const handleDelete = useCallback(
     (message: TMessage) => {
@@ -349,10 +582,34 @@ const MessageList: React.FC<{ className?: string }> = () => {
   );
 
   const handleRegenerate = useCallback(
-    (_message: TMessage, _mode: 'inPlace' | 'fork') => {
-      messageApi.info('Regenerate is not wired yet.');
+    async (message: TMessage, mode: 'inPlace' | 'fork') => {
+      if (!isEditableBackend) {
+        return;
+      }
+
+      const historyIndex = resolveHistoryIndex(message);
+      if (historyIndex === null) {
+        messageApi.error(t('messages.regenerateFailed', { defaultValue: 'Unable to regenerate this message.' }));
+        return;
+      }
+
+      messageApi.info(t('messages.regenerating', { defaultValue: 'Regenerating...' }));
+
+      try {
+        const result = await ipcBridge.acpConversation.regenerateMessage.invoke({
+          conversation_id: conversationId,
+          messageIndex: historyIndex,
+          mode,
+        });
+
+        if (!result.success) {
+          throw new Error(result.msg || 'Failed to regenerate message.');
+        }
+      } catch (error) {
+        messageApi.error(error instanceof Error ? error.message : String(error));
+      }
     },
-    [messageApi]
+    [conversationId, isEditableBackend, messageApi, resolveHistoryIndex, t]
   );
 
   // 当消息列表更新时，智能滚动
@@ -418,12 +675,30 @@ const MessageList: React.FC<{ className?: string }> = () => {
                   return null;
                 }
 
-                const canEdit = isEditableBackend && isEditableTextMessage(message);
-                const editHandler = canEdit ? handleEdit : undefined;
+                const canEdit = isEditableBackend && isEditableMessage(message);
+                const isToolCallMessage = message.type === 'tool_group' || message.type === 'acp_tool_call';
+                const canEditToolCall = isEditableBackend && isToolCallMessage;
+                const editHandler = canEdit && !isToolCallMessage ? handleEdit : undefined;
+                const editToolCallHandler = canEditToolCall ? handleEditToolCall : undefined;
+                const editToolResultHandler = canEditToolCall ? handleEditToolResult : undefined;
                 const deleteHandler = canEdit ? handleDelete : undefined;
                 const saveHandler = canEdit ? handleSaveFromHere : undefined;
                 const regenerateHandler = canEdit ? handleRegenerate : undefined;
-                const contextMenuProps = { message, conversationId, onEdit: editHandler, onDelete: deleteHandler, onRegenerate: regenerateHandler, onSaveFromHere: saveHandler };
+                const contextMenuProps = {
+                  message,
+                  conversationId,
+                  onEdit: editHandler,
+                  onEditToolCall: editToolCallHandler,
+                  onEditToolResult: editToolResultHandler,
+                  onDelete: deleteHandler,
+                  onRegenerate: regenerateHandler,
+                  onSaveFromHere: saveHandler,
+                };
+                const hasContextMenu = Boolean(editHandler || editToolCallHandler || editToolResultHandler || deleteHandler || regenerateHandler || saveHandler) || message.type === 'text';
+
+                if (!hasContextMenu) {
+                  return <MessageItem key={message.id} message={message} />;
+                }
 
                 return (
                   <MessageContextMenu key={message.id} {...contextMenuProps}>
@@ -454,6 +729,39 @@ const MessageList: React.FC<{ className?: string }> = () => {
             defaultValue: 'Keep any [[AIONUI_PART:...]] tokens to preserve non-text parts.',
           })}
         </div>
+        {editTokenParts.length > 0 && (
+          <div className='mt-12px'>
+            <div className='text-12px text-[var(--color-text-3)]'>Non-text parts</div>
+            <div className='mt-6px flex flex-col gap-6px'>
+              {editTokenParts.map((entry) => {
+                const part = editPartOverrides[entry.tokenId] ?? entry.part;
+                return (
+                  <div key={entry.tokenId} className='flex items-center justify-between gap-8px'>
+                    <div className='flex flex-col'>
+                      <span className='font-mono text-12px text-[var(--color-text-3)] cursor-pointer' onClick={() => openPartEditor(entry.tokenId)}>
+                        {`[[AIONUI_PART:${entry.tokenId}]]`}
+                      </span>
+                      <span className='text-12px text-[var(--color-text-2)]'>{getPartLabel(part)}</span>
+                    </div>
+                    <Button size='mini' onClick={() => openPartEditor(entry.tokenId)}>
+                      {t('common.edit', { defaultValue: 'Edit' })}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </Modal>
+      <Modal title={t('common.edit', { defaultValue: 'Edit' })} visible={partModalVisible} onOk={handlePartSave} onCancel={handlePartCancel} okText={t('common.save', { defaultValue: 'Save' })} cancelText={t('common.cancel', { defaultValue: 'Cancel' })}>
+        <Input.TextArea value={activePartText} onChange={setActivePartText} autoSize={{ minRows: 6, maxRows: 16 }} />
+        {activePartError && <div className='mt-6px text-12px text-[rgb(var(--danger-6))]'>{activePartError}</div>}
+        {(activePartPreviewUrl || activePartIsImage) && (
+          <div className='mt-12px flex items-center gap-12px'>
+            {activePartPreviewUrl && <Image src={activePartPreviewUrl} width={96} height={96} />}
+            <Button onClick={handleReplaceImage}>Replace image</Button>
+          </div>
+        )}
       </Modal>
     </>
   );

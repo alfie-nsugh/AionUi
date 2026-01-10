@@ -7,7 +7,7 @@
 import type { AcpBackend } from '@/types/acpTypes';
 import FlexFullContainer from '@renderer/components/FlexFullContainer';
 import MessageList from '@renderer/messages/MessageList';
-import { MessageListProvider, useMessageLstCache } from '@renderer/messages/hooks';
+import { ChatKeyProvider, MessageListProvider, useMessageLstCache } from '@renderer/messages/hooks';
 import HOC from '@renderer/utils/HOC';
 import React from 'react';
 import AcpSendBox from './AcpSendBox';
@@ -21,13 +21,15 @@ const AcpChat: React.FC<{
   useMessageLstCache(conversation_id);
 
   return (
-    <ConversationProvider value={{ conversationId: conversation_id, workspace, type: 'acp' }}>
-      <div className='flex-1 flex flex-col px-20px'>
-        <FlexFullContainer>
-          <MessageList className='flex-1'></MessageList>
-        </FlexFullContainer>
-        <AcpSendBox conversation_id={conversation_id} backend={backend}></AcpSendBox>
-      </div>
+    <ConversationProvider value={{ conversationId: conversation_id, workspace, type: 'acp', backend }}>
+      <ChatKeyProvider value={conversation_id}>
+        <div className='flex-1 flex flex-col px-20px'>
+          <FlexFullContainer>
+            <MessageList className='flex-1'></MessageList>
+          </FlexFullContainer>
+          <AcpSendBox conversation_id={conversation_id} backend={backend}></AcpSendBox>
+        </div>
+      </ChatKeyProvider>
     </ConversationProvider>
   );
 };

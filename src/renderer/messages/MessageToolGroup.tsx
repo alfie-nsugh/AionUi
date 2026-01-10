@@ -7,12 +7,11 @@
 import { ipcBridge } from '@/common';
 import type { IMessageToolGroup } from '@/common/chatLib';
 import { iconColors } from '@/renderer/theme/colors';
-import { Alert, Button, Image, Message, Radio, Tag, Tooltip } from '@arco-design/web-react';
+import { Button, Card, Image, Message, Modal, Radio, Tag, Tooltip } from '@arco-design/web-react';
 import { Copy, Download, LoadingOne } from '@icon-park/react';
 import 'diff2html/bundles/css/diff2html.min.css';
 import React, { useCallback, useContext, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import CollapsibleContent from '../components/CollapsibleContent';
 import Diff2Html from '../components/Diff2Html';
 import LocalImageView from '../components/LocalImageView';
 import MarkdownView from '../components/Markdown';
@@ -318,7 +317,8 @@ const ImageDisplay: React.FC<{
 const ToolResultDisplay: React.FC<{
   content: IMessageToolGroupProps['message']['content'][number];
 }> = ({ content }) => {
-  const { resultDisplay, name } = content;
+  const { resultDisplay, name, rawInput } = content;
+  const [modalVisible, setModalVisible] = useState(false);
 
   // 图片生成特殊处理 Special handling for image generation
   if (name === 'ImageGeneration' && typeof resultDisplay === 'object') {
@@ -327,20 +327,42 @@ const ToolResultDisplay: React.FC<{
     if (result.img_url) {
       return <LocalImageView src={result.img_url} alt={result.relative_path || result.img_url} className='max-w-100% max-h-100%' />;
     }
-    // 如果是错误，继续走下面的 JSON 显示逻辑
   }
 
   // 将结果转换为字符串 Convert result to string
   const display = typeof resultDisplay === 'string' ? resultDisplay : JSON.stringify(resultDisplay, null, 2);
 
-  // 使用 CollapsibleContent 包装长内容
-  // Wrap long content with CollapsibleContent
+  // Create a summary for the grey box preview (similar to ACP style)
+  let summaryText = '';
+  if (name === 'google_web_search' && rawInput && typeof rawInput === 'object' && (rawInput as any).query) {
+    summaryText = `Search results for "${(rawInput as any).query}" returned.`;
+  } else if (name === 'list_files' && rawInput && typeof rawInput === 'object' && (rawInput as any).path) {
+    summaryText = `Directory listing for ${(rawInput as any).path} returned.`;
+  } else if (name === 'read_file' && rawInput && typeof rawInput === 'object' && (rawInput as any).path) {
+    summaryText = `Content of ${(rawInput as any).path} returned.`;
+  } else {
+    // Default fallback
+    summaryText = `Tool execution completed.`;
+  }
+
+  // If the actual result is just a short text, maybe showing it directly is fine?
+  // But user wants "identical" styling. So we use the grey box summary.
+
+  // Use a grey box style matching ACP's text container
   return (
-    <CollapsibleContent maxHeight={RESULT_MAX_HEIGHT} defaultCollapsed={true} useMask={false}>
-      <pre className='text-t-primary whitespace-pre-wrap break-words m-0' style={{ fontSize: `${TEXT_CONFIG.FONT_SIZE}px`, lineHeight: TEXT_CONFIG.LINE_HEIGHT }}>
-        {display}
-      </pre>
-    </CollapsibleContent>
+    <>
+      <div className='mt-3 cursor-pointer hover:opacity-80 transition-opacity' onClick={() => setModalVisible(true)}>
+        <div className='bg-1 p-3 rounded border overflow-hidden'>
+          <div className='overflow-x-auto break-words text-t-primary'>{summaryText}</div>
+        </div>
+      </div>
+
+      <Modal title='Tool Result' visible={modalVisible} onOk={() => setModalVisible(false)} onCancel={() => setModalVisible(false)} footer={null} style={{ width: '80%', maxWidth: '800px' }}>
+        <div className='max-h-[60vh] overflow-y-auto'>
+          <pre className='text-xs whitespace-pre-wrap break-words font-mono bg-1 p-4 rounded'>{display}</pre>
+        </div>
+      </Modal>
+    </>
   );
 };
 
@@ -357,11 +379,31 @@ const MessageToolGroup: React.FC<IMessageToolGroupProps> = ({ message }) => {
     return message.content.findIndex((item) => item.name === 'WriteFile' && item.resultDisplay && typeof item.resultDisplay === 'object' && 'fileDiff' in item.resultDisplay);
   }, [message.content]);
 
+  const StatusTag: React.FC<{ status: string }> = ({ status }) => {
+    const getStatusTagProps = () => {
+      switch (status) {
+        case 'Success':
+          return { color: 'green' as const, text: 'Completed' };
+        case 'Error':
+          return { color: 'red' as const, text: 'Error' };
+        case 'Canceled':
+          return { color: 'orange' as const, text: 'Canceled' };
+        case 'Pending':
+        case 'Confirming':
+          return { color: 'blue' as const, text: 'Pending' };
+        default:
+          return { color: 'gray' as const, text: String(status) };
+      }
+    };
+    const { color, text } = getStatusTagProps();
+    return <Tag color={color}>{text}</Tag>;
+  };
+
   return (
-    <div>
+    <div className='flex flex-col gap-2 w-full'>
       {message.content.map((content, index) => {
-        const { status, callId, name, description, resultDisplay, confirmationDetails } = content;
-        const isLoading = status !== 'Success' && status !== 'Error' && status !== 'Canceled';
+        const { status, callId, name, description, resultDisplay, confirmationDetails, rawInput } = content;
+
         // status === "Confirming" &&
         if (confirmationDetails) {
           return (
@@ -387,10 +429,10 @@ const MessageToolGroup: React.FC<IMessageToolGroupProps> = ({ message }) => {
           );
         }
 
-        // WriteFile 特殊处理：使用 MessageFileChanges 汇总显示 / WriteFile special handling: use MessageFileChanges for summary display
+        // WriteFile 特殊处理：使用 MessageFileChanges 汇总显示
         if (name === 'WriteFile' && typeof resultDisplay !== 'string') {
           if (resultDisplay && typeof resultDisplay === 'object' && 'fileDiff' in resultDisplay) {
-            // 只在第一个 WriteFile 位置显示汇总组件 / Only show summary component at first WriteFile position
+            // 只在第一个 WriteFile 位置显示汇总组件
             if (index === firstWriteFileIndex && writeFileResults.length > 0) {
               return (
                 <div className='w-full min-w-0' key={callId}>
@@ -398,12 +440,12 @@ const MessageToolGroup: React.FC<IMessageToolGroupProps> = ({ message }) => {
                 </div>
               );
             }
-            // 跳过其他 WriteFile / Skip other WriteFile
+            // 跳过其他 WriteFile
             return null;
           }
         }
 
-        // ImageGeneration 特殊处理：单独展示图片，不用 Alert 包裹 Special handling for ImageGeneration: display image separately without Alert wrapper
+        // ImageGeneration 特殊处理：单独展示图片，不用 Card 包裹
         if (name === 'ImageGeneration' && typeof resultDisplay === 'object') {
           const result = resultDisplay as ImageGenerationResult;
           if (result.img_url) {
@@ -412,37 +454,33 @@ const MessageToolGroup: React.FC<IMessageToolGroupProps> = ({ message }) => {
         }
 
         // 通用工具调用展示 Generic tool call display
-        // 将可展开的长内容放在 Alert 下方，保持 Alert 仅展示头部信息
+        // Use Card style matching MessageAcpToolCall for consistency
         return (
-          <div key={callId}>
-            <Alert
-              className={ALERT_CLASSES}
-              type={status === 'Error' ? 'error' : status === 'Success' ? 'success' : status === 'Canceled' ? 'warning' : 'info'}
-              icon={isLoading && <LoadingOne theme='outline' size='12' fill={iconColors.primary} className='loading lh-[1] flex' />}
-              content={
-                <div>
-                  <Tag className={'mr-4px'}>
-                    {name}
-                    {status === 'Canceled' ? `(${t('messages.canceledExecution')})` : ''}
-                  </Tag>
+          <Card key={callId} className='w-full' size='small' bordered>
+            <div className='flex items-start gap-3'>
+              <div className='flex-1 min-w-0'>
+                <div className='flex items-center gap-2 mb-2'>
+                  <span className='font-medium text-t-primary'>{name}</span>
+                  <StatusTag status={status} />
                 </div>
-              }
-            />
 
-            {(description || resultDisplay) && (
-              <div className='mt-8px'>
-                {description && <div className='text-12px text-t-secondary whitespace-pre-wrap break-words mb-2'>{description}</div>}
+                {/* Input Display */}
+                {rawInput && <div className='text-sm mb-2'>{typeof rawInput === 'string' ? <MarkdownView>{`\`\`\`\n${rawInput}\n\`\`\``}</MarkdownView> : <pre className='bg-1 p-2 rounded text-xs overflow-x-auto'>{JSON.stringify(rawInput, null, 2)}</pre>}</div>}
+
+                {/* Description fallback if no rawInput but description exists */}
+                {!rawInput && description && <pre className='text-12px text-t-secondary bg-1 p-8px rd-4px overflow-x-auto m-0 mb-8px'>{description}</pre>}
+
+                {/* Result Display */}
                 {resultDisplay && (
                   <div>
-                    {/* 在 Alert 外展示完整结果 Display full result outside Alert */}
-                    {/* ToolResultDisplay 内部已包含 CollapsibleContent，避免嵌套 */}
-                    {/* ToolResultDisplay already contains CollapsibleContent internally, avoid nesting */}
                     <ToolResultDisplay content={content} />
                   </div>
                 )}
+
+                <div className='text-xs text-t-secondary mt-2'>Tool Call ID: {callId}</div>
               </div>
-            )}
-          </div>
+            </div>
+          </Card>
         );
       })}
     </div>

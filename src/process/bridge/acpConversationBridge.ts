@@ -114,4 +114,99 @@ export function initAcpConversationBridge(): void {
       };
     }
   });
+
+  ipcBridge.acpConversation.getEditableMessage.provider(async ({ conversation_id, messageIndex, exactIndex }) => {
+    try {
+      const task = (await WorkerManage.getTaskByIdRollbackBuild(conversation_id)) as AcpAgentManager;
+      if (!task || task.type !== 'acp') {
+        return { success: false, msg: 'ACP session not found' };
+      }
+
+      const data = await task.getEditableMessage(messageIndex, { exactIndex });
+      return { success: true, data };
+    } catch (error) {
+      return {
+        success: false,
+        msg: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  ipcBridge.acpConversation.editMessage.provider(async ({ conversation_id, messageIndex, content, mode, format, tokenSetId, partOverrides }) => {
+    try {
+      const task = (await WorkerManage.getTaskByIdRollbackBuild(conversation_id)) as AcpAgentManager;
+      if (!task || task.type !== 'acp') {
+        return { success: false, msg: 'ACP session not found' };
+      }
+
+      const data = await task.editMessage({
+        messageIndex,
+        content,
+        mode,
+        format,
+        tokenSetId,
+        partOverrides,
+      });
+      return { success: true, data };
+    } catch (error) {
+      return {
+        success: false,
+        msg: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  ipcBridge.acpConversation.regenerateMessage.provider(async ({ conversation_id, messageIndex, mode }) => {
+    try {
+      const task = (await WorkerManage.getTaskByIdRollbackBuild(conversation_id)) as AcpAgentManager;
+      if (!task || task.type !== 'acp') {
+        return { success: false, msg: 'ACP session not found' };
+      }
+
+      const data = await task.regenerateMessage({
+        messageIndex,
+        mode,
+      });
+      return { success: true, data };
+    } catch (error) {
+      return {
+        success: false,
+        msg: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  ipcBridge.acpConversation.deleteMessage.provider(async ({ conversation_id, messageIndex }) => {
+    try {
+      const task = (await WorkerManage.getTaskByIdRollbackBuild(conversation_id)) as AcpAgentManager;
+      if (!task || task.type !== 'acp') {
+        return { success: false, msg: 'ACP session not found' };
+      }
+
+      await task.deleteMessage(messageIndex);
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        msg: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
+
+  ipcBridge.acpConversation.saveFromPoint.provider(async ({ conversation_id, messageIndex, saveName }) => {
+    try {
+      const task = (await WorkerManage.getTaskByIdRollbackBuild(conversation_id)) as AcpAgentManager;
+      if (!task || task.type !== 'acp') {
+        return { success: false, msg: 'ACP session not found' };
+      }
+
+      const data = await task.saveFromPoint(messageIndex, saveName);
+      return { success: true, data };
+    } catch (error) {
+      return {
+        success: false,
+        msg: error instanceof Error ? error.message : 'Unknown error',
+      };
+    }
+  });
 }

@@ -892,4 +892,12 @@ export class AcpAgent {
   callMethod<TParams = unknown, TResult = unknown>(method: string, params?: TParams): Promise<TResult> {
     return this.connection.callMethod<TResult>(method, params as Record<string, unknown>);
   }
+
+  getSessionId(): string | null {
+    return this.connection.getSessionId();
+  }
+
+  setSessionId(sessionId: string): void {
+    this.connection.setSessionId(sessionId);
+  }
 }

@@ -6,7 +6,7 @@
 
 import FlexFullContainer from '@renderer/components/FlexFullContainer';
 import MessageList from '@renderer/messages/MessageList';
-import { MessageListProvider, useMessageLstCache } from '@renderer/messages/hooks';
+import { ChatKeyProvider, MessageListProvider, useMessageLstCache } from '@renderer/messages/hooks';
 import HOC from '@renderer/utils/HOC';
 import React, { useEffect } from 'react';
 import LocalImageView from '../../../components/LocalImageView';
@@ -29,12 +29,14 @@ const GeminiChat: React.FC<{
 
   return (
     <ConversationProvider value={{ conversationId: conversation_id, workspace, type: 'gemini' }}>
-      <div className='flex-1 flex flex-col px-20px'>
-        <FlexFullContainer>
-          <MessageList className='flex-1'></MessageList>
-        </FlexFullContainer>
-        <GeminiSendBox conversation_id={conversation_id} modelSelection={modelSelection}></GeminiSendBox>
-      </div>
+      <ChatKeyProvider value={conversation_id}>
+        <div className='flex-1 flex flex-col px-20px'>
+          <FlexFullContainer>
+            <MessageList className='flex-1'></MessageList>
+          </FlexFullContainer>
+          <GeminiSendBox conversation_id={conversation_id} modelSelection={modelSelection}></GeminiSendBox>
+        </div>
+      </ChatKeyProvider>
     </ConversationProvider>
   );
 };

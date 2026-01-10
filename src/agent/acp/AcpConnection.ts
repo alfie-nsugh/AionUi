@@ -626,6 +626,14 @@ export class AcpConnection {
     return hasSession;
   }
 
+  getSessionId(): string | null {
+    return this.sessionId;
+  }
+
+  setSessionId(sessionId: string): void {
+    this.sessionId = sessionId;
+  }
+
   get currentBackend(): AcpBackend | null {
     return this.backend;
   }

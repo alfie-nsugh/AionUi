@@ -118,6 +118,11 @@ export const acpConversation = {
   refreshCustomAgents: bridge.buildProvider<IBridgeResponse, void>('acp.refresh-custom-agents'),
   // Slash command completions for autocomplete
   completeCommand: bridge.buildProvider<IBridgeResponse<{ suggestions: Array<{ name: string; description: string; category: string; text?: string; isArgument?: boolean }> }>, { sessionId?: string; partial: string }>('acp.complete-command'),
+  getEditableMessage: bridge.buildProvider<IBridgeResponse<{ content: string; format: string; tokenSetId?: string; parts: Array<{ tokenId: string; part: Record<string, unknown> }>; resolvedIndex?: number }>, { conversation_id: string; messageIndex: number; exactIndex?: boolean }>('acp.get-editable-message'),
+  editMessage: bridge.buildProvider<IBridgeResponse<{ success: boolean; newSessionId?: string }>, { conversation_id: string; messageIndex: number; content: string; mode: 'inPlace' | 'fork'; format?: string; tokenSetId?: string; partOverrides?: Array<{ tokenId: string; part: Record<string, unknown> }> }>('acp.edit-message'),
+  regenerateMessage: bridge.buildProvider<IBridgeResponse<{ success: boolean; newSessionId?: string }>, { conversation_id: string; messageIndex: number; mode: 'inPlace' | 'fork' }>('acp.regenerate-message'),
+  deleteMessage: bridge.buildProvider<IBridgeResponse, { conversation_id: string; messageIndex: number }>('acp.delete-message'),
+  saveFromPoint: bridge.buildProvider<IBridgeResponse<{ success: boolean; savePath: string }>, { conversation_id: string; messageIndex: number; saveName: string }>('acp.save-from-point'),
   // clearAllCache: bridge.buildProvider<IBridgeResponse<{ details?: any }>, void>('acp.clear.all.cache'),
 };
 

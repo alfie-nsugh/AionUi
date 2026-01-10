@@ -20,6 +20,8 @@ interface AcpAgentManagerData {
   customAgentId?: string; // 用于标识特定自定义代理的 UUID / UUID for identifying specific custom agent
 }
 
+type AcpSessionUpdateResult = { success: boolean; newSessionId?: string };
+
 class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData> {
   workspace: string;
   agent: AcpAgent;
@@ -177,6 +179,14 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData> {
     await this.agent.confirmMessage(data);
   }
 
+  private requireSessionId(): string {
+    const sessionId = this.agent.getSessionId();
+    if (!sessionId) {
+      throw new Error('No active ACP session');
+    }
+    return sessionId;
+  }
+
   /**
    * Get slash command completions from the ACP backend
    */
@@ -187,6 +197,104 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData> {
     const result = await this.agent.callMethod<{ partial: string; sessionId?: string }, { suggestions: Array<{ name: string; description: string; category: string; text?: string; isArgument?: boolean }> }>('commands/complete', { partial, sessionId: this.conversation_id });
 
     return result?.suggestions ?? [];
+  }
+
+  async getEditableMessage(
+    messageIndex: number,
+    options?: { exactIndex?: boolean }
+  ): Promise<{
+    content: string;
+    format: string;
+    tokenSetId?: string;
+    parts: Array<{ tokenId: string; part: Record<string, unknown> }>;
+    resolvedIndex?: number;
+  }> {
+    await this.initAgent(this.options);
+    const sessionId = this.requireSessionId();
+    return await this.agent.callMethod('session/getMessageForEdit', {
+      sessionId,
+      messageIndex,
+      exactIndex: options?.exactIndex,
+    });
+  }
+
+  async editMessage(params: { messageIndex: number; content: string; mode: 'inPlace' | 'fork'; format?: string; tokenSetId?: string; partOverrides?: Array<{ tokenId: string; part: Record<string, unknown> }> }): Promise<{ success: boolean; newSessionId?: string }> {
+    await this.initAgent(this.options);
+    const sessionId = this.requireSessionId();
+    const result = await this.agent.callMethod<
+      {
+        sessionId: string;
+        messageIndex: number;
+        newContent: string;
+        mode: 'inPlace' | 'fork';
+        format?: string;
+        tokenSetId?: string;
+        partOverrides?: Array<{ tokenId: string; part: Record<string, unknown> }>;
+      },
+      AcpSessionUpdateResult
+    >('session/editMessage', {
+      sessionId,
+      messageIndex: params.messageIndex,
+      newContent: params.content,
+      mode: params.mode,
+      format: params.format,
+      tokenSetId: params.tokenSetId,
+      partOverrides: params.partOverrides,
+    });
+
+    if (result?.newSessionId) {
+      this.agent.setSessionId(result.newSessionId);
+    }
+
+    return result;
+  }
+
+  async regenerateMessage(params: { messageIndex: number; mode: 'inPlace' | 'fork' }): Promise<{ success: boolean; newSessionId?: string }> {
+    await this.initAgent(this.options);
+    const sessionId = this.requireSessionId();
+    const result = await this.agent.callMethod<
+      {
+        sessionId: string;
+        messageIndex: number;
+        mode: 'inPlace' | 'fork';
+      },
+      AcpSessionUpdateResult
+    >('session/regenerate', {
+      sessionId,
+      messageIndex: params.messageIndex,
+      mode: params.mode,
+    });
+
+    if (result?.newSessionId) {
+      this.agent.setSessionId(result.newSessionId);
+    }
+
+    return result;
+  }
+
+  async deleteMessage(messageIndex: number): Promise<void> {
+    await this.initAgent(this.options);
+    const sessionId = this.requireSessionId();
+    await this.agent.callMethod('session/deleteMessage', {
+      sessionId,
+      messageIndex,
+    });
+  }
+
+  async saveFromPoint(
+    messageIndex: number,
+    saveName: string
+  ): Promise<{
+    success: boolean;
+    savePath: string;
+  }> {
+    await this.initAgent(this.options);
+    const sessionId = this.requireSessionId();
+    return await this.agent.callMethod('session/saveFromPoint', {
+      sessionId,
+      messageIndex,
+      saveName,
+    });
   }
 }
 

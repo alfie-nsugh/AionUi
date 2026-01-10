@@ -119,41 +119,47 @@ export class AcpAdapter {
             content: string;
             toolCalls?: HistorySnapshotToolCall[];
             timestamp?: number;
+            historyIndex?: number;
           }>;
         };
         if (historyUpdate.messages) {
           const baseTime = Date.now();
-          let offset = 0;
           for (const msg of historyUpdate.messages) {
-            const messageBase = Number.isFinite(msg.timestamp ?? NaN) ? (msg.timestamp as number) : baseTime;
-            const createdAt = messageBase + offset;
-            offset += 1;
-            if (msg.content && msg.content.trim().length > 0) {
+            // Use historyIndex for ordering if available, otherwise fallback to baseTime
+            const orderBase = typeof msg.historyIndex === 'number' ? msg.historyIndex * 1000 : baseTime;
+            const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
+
+            // Only show text message if it has real content (not just [Tool call] placeholder)
+            const isPlaceholder = msg.content?.trim() === '[Tool call]';
+            const showTextMessage = msg.content && msg.content.trim().length > 0 && !isPlaceholder;
+
+            if (showTextMessage) {
               const historyMessage: TMessage = {
                 id: uuid(),
                 msg_id: uuid(),
                 conversation_id: this.conversationId,
-                createdAt,
+                createdAt: orderBase,
                 type: 'text',
                 position: msg.role === 'user' ? 'right' : 'left',
                 content: {
                   content: msg.content,
                 },
+                historyIndex: msg.historyIndex,
               };
               messages.push(historyMessage);
             }
 
-            if (msg.toolCalls && msg.toolCalls.length > 0) {
+            if (hasToolCalls) {
               const toolGroupMessage: TMessage = {
                 id: uuid(),
                 msg_id: uuid(),
                 conversation_id: this.conversationId,
-                createdAt: messageBase + offset,
+                createdAt: orderBase + 1, // Slightly after text for same historyIndex
                 type: 'tool_group',
                 position: 'left',
                 content: msg.toolCalls.map((toolCall) => this.mapHistoryToolCall(toolCall)),
+                historyIndex: msg.historyIndex,
               };
-              offset += 1;
               messages.push(toolGroupMessage);
             }
           }
@@ -266,15 +272,16 @@ export class AcpAdapter {
   }
 
   private mapHistoryToolCall(toolCall: HistorySnapshotToolCall): IMessageToolGroup['content'][number] {
-    const description = toolCall.description ?? JSON.stringify(toolCall.args ?? {});
     return {
       callId: toolCall.id,
-      name: toolCall.displayName ?? toolCall.name,
-      description,
-      renderOutputAsMarkdown: toolCall.renderOutputAsMarkdown ?? false,
-      resultDisplay: toolCall.resultDisplay,
+      name: toolCall.name,
+      description: toolCall.args ? `Arguments: ${JSON.stringify(toolCall.args, null, 2)}` : '',
       status: this.mapHistoryToolStatus(toolCall.status),
-      confirmationDetails: undefined,
+      resultDisplay: toolCall.resultDisplay,
+      callHistoryIndex: toolCall.callHistoryIndex,
+      responseHistoryIndex: toolCall.responseHistoryIndex,
+      renderOutputAsMarkdown: true,
+      rawInput: toolCall.args,
     };
   }
 
@@ -300,6 +307,8 @@ export class AcpAdapter {
         ...existingMessage.content.update,
         status: toolCallData.status,
         content: toolCallData.content || existingMessage.content.update.content,
+        callHistoryIndex: toolCallData.callHistoryIndex ?? existingMessage.content.update.callHistoryIndex,
+        responseHistoryIndex: toolCallData.responseHistoryIndex ?? existingMessage.content.update.responseHistoryIndex,
       },
     };
 

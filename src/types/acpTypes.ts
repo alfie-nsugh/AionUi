@@ -384,6 +384,8 @@ export interface ToolCallUpdate extends BaseSessionUpdate {
     status: 'pending' | 'in_progress' | 'completed' | 'failed';
     title: string;
     kind: 'read' | 'edit' | 'execute';
+    callHistoryIndex?: number;
+    responseHistoryIndex?: number;
     rawInput?: any;
     content?: Array<{
       type: 'content' | 'diff';
@@ -407,6 +409,8 @@ export interface ToolCallUpdateStatus extends BaseSessionUpdate {
     sessionUpdate: 'tool_call_update';
     toolCallId: string;
     status: 'completed' | 'failed';
+    callHistoryIndex?: number;
+    responseHistoryIndex?: number;
     content?: Array<{
       type: 'content';
       content: {
@@ -475,6 +479,7 @@ export interface HistorySnapshotUpdate extends BaseSessionUpdate {
       content: string;
       toolCalls?: HistorySnapshotToolCall[];
       timestamp?: number;
+      historyIndex?: number;
     }>;
   };
 }
@@ -493,6 +498,8 @@ export interface HistorySnapshotToolCall {
   id: string;
   name: string;
   args: Record<string, unknown>;
+  callHistoryIndex?: number;
+  responseHistoryIndex?: number;
   status: 'validating' | 'scheduled' | 'executing' | 'success' | 'error' | 'cancelled' | 'awaiting_approval';
   displayName?: string;
   description?: string;

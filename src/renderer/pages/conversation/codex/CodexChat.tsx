@@ -6,7 +6,7 @@
 
 import FlexFullContainer from '@renderer/components/FlexFullContainer';
 import MessageList from '@renderer/messages/MessageList';
-import { MessageListProvider, useMessageLstCache } from '@renderer/messages/hooks';
+import { ChatKeyProvider, MessageListProvider, useMessageLstCache } from '@renderer/messages/hooks';
 import HOC from '@renderer/utils/HOC';
 import React, { useEffect } from 'react';
 import CodexSendBox from './CodexSendBox';
@@ -24,12 +24,14 @@ const CodexChat: React.FC<{
   }, [workspace]);
   return (
     <ConversationProvider value={{ conversationId: conversation_id, workspace, type: 'codex' }}>
-      <div className='flex-1 flex flex-col px-20px'>
-        <FlexFullContainer>
-          <MessageList className='flex-1'></MessageList>
-        </FlexFullContainer>
-        <CodexSendBox conversation_id={conversation_id} />
-      </div>
+      <ChatKeyProvider value={conversation_id}>
+        <div className='flex-1 flex flex-col px-20px'>
+          <FlexFullContainer>
+            <MessageList className='flex-1'></MessageList>
+          </FlexFullContainer>
+          <CodexSendBox conversation_id={conversation_id} />
+        </div>
+      </ChatKeyProvider>
     </ConversationProvider>
   );
 };

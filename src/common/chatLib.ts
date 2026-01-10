@@ -81,6 +81,10 @@ interface IMessage<T extends TMessageType, Content extends Record<string, any>> 
    */
   createdAt?: number;
   /**
+   * Backend history index for editable messages
+   */
+  historyIndex?: number;
+  /**
    * 消息位置
    */
   position?: 'left' | 'right' | 'center' | 'pop';
@@ -125,7 +129,10 @@ export type IMessageToolGroup = IMessage<
     callId: string;
     description: string;
     name: string;
+    callHistoryIndex?: number;
+    responseHistoryIndex?: number;
     renderOutputAsMarkdown: boolean;
+    rawInput?: Record<string, any> | string;
     resultDisplay?:
       | string
       | {
