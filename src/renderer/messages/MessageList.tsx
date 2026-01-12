@@ -43,7 +43,7 @@ type EditTokenPart = {
 };
 
 const isEditableTextMessage = (message: TMessage): boolean => {
-  return message.type === 'text' && (message.position === 'left' || message.position === 'right');
+  return message.type === 'text' && (message.position === 'left' || message.position === 'right') && typeof message.historyIndex === 'number';
 };
 
 const isEditableToolGroup = (message: TMessage): boolean => {
@@ -198,25 +198,12 @@ const MessageList: React.FC<{ className?: string }> = () => {
   const editableBackendId = conversationContext?.backend ?? '';
   const isEditableBackend = conversationContext?.type === 'acp' && (editableBackendId === 'flux' || editableBackendId === 'custom');
 
-  const resolveHistoryIndex = useCallback(
-    (message: TMessage): number | null => {
-      if (typeof message.historyIndex === 'number') {
-        return message.historyIndex;
-      }
-      let ordinal = -1;
-      for (const entry of list) {
-        if (!isEditableTextMessage(entry)) {
-          continue;
-        }
-        ordinal += 1;
-        if (entry.id === message.id) {
-          return ordinal + HISTORY_MESSAGE_OFFSET;
-        }
-      }
-      return null;
-    },
-    [list]
-  );
+  const resolveHistoryIndex = useCallback((message: TMessage): number | null => {
+    if (typeof message.historyIndex === 'number') {
+      return message.historyIndex;
+    }
+    return null;
+  }, []);
 
   // 提取所有 Codex turn_diff 消息用于汇总显示 / Extract all Codex turn_diff messages for summary display
   const { turnDiffMessages, firstTurnDiffIndex } = useMemo(() => {
