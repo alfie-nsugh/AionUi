@@ -7,7 +7,7 @@ import { transformMessage } from '@/common/chatLib';
 import type { IConfirmMessageParams, IResponseMessage } from '@/common/ipcBridge';
 import { parseError, uuid } from '@/common/utils';
 import { ProcessConfig } from '../initStorage';
-import { addMessage, addOrUpdateMessage, clearMessages, nextTickToLocalFinish } from '../message';
+import { addMessage, addOrUpdateMessage, clearMessages, nextTickToLocalFinish, updateMessage } from '../message';
 import BaseAgentManager from './BaseAgentManager';
 import { handlePreviewOpenEvent } from '../utils/previewUtils';
 
@@ -100,6 +100,12 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData> {
             return;
           }
 
+          if (v.type === 'history_index_update') {
+            this.applyHistoryIndexUpdate(v.conversation_id, v.data as { lastUserIndex?: number; lastModelIndex?: number });
+            ipcBridge.acpConversation.responseStream.emit(v);
+            return;
+          }
+
           if (v.type !== 'thought') {
             const tMessage = transformMessage(v as IResponseMessage);
             if (tMessage) {
@@ -116,6 +122,36 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData> {
       return this.agent.start().then(() => this.agent);
     })();
     return this.bootstrap;
+  }
+
+  private applyHistoryIndexUpdate(conversationId: string, payload: { lastUserIndex?: number; lastModelIndex?: number }): void {
+    updateMessage(conversationId, (messages) => {
+      const updated = messages.slice();
+      const hasUserIndex = typeof payload.lastUserIndex === 'number';
+      const hasModelIndex = typeof payload.lastModelIndex === 'number';
+
+      if (hasUserIndex) {
+        for (let i = updated.length - 1; i >= 0; i--) {
+          const msg = updated[i];
+          if (msg.type === 'text' && msg.position === 'right' && typeof msg.historyIndex !== 'number') {
+            updated[i] = { ...msg, historyIndex: payload.lastUserIndex };
+            break;
+          }
+        }
+      }
+
+      if (hasModelIndex) {
+        for (let i = updated.length - 1; i >= 0; i--) {
+          const msg = updated[i];
+          if (msg.type === 'text' && msg.position === 'left' && typeof msg.historyIndex !== 'number') {
+            updated[i] = { ...msg, historyIndex: payload.lastModelIndex };
+            break;
+          }
+        }
+      }
+
+      return updated;
+    });
   }
 
   async sendMessage(data: { content: string; files?: string[]; msg_id?: string }): Promise<{
@@ -194,7 +230,8 @@ class AcpAgentManager extends BaseAgentManager<AcpAgentManagerData> {
     await this.bootstrap;
 
     // Call the commands/complete RPC on the ACP connection
-    const result = await this.agent.callMethod<{ partial: string; sessionId?: string }, { suggestions: Array<{ name: string; description: string; category: string; text?: string; isArgument?: boolean }> }>('commands/complete', { partial, sessionId: this.conversation_id });
+    const sessionId = this.agent.getSessionId() ?? undefined;
+    const result = await this.agent.callMethod<{ partial: string; sessionId?: string }, { suggestions: Array<{ name: string; description: string; category: string; text?: string; isArgument?: boolean }> }>('commands/complete', { partial, ...(sessionId ? { sessionId } : {}) });
 
     return result?.suggestions ?? [];
   }

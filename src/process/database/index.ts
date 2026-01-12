@@ -547,11 +547,11 @@ export class AionUIDatabase {
       const row = messageToRow(message);
 
       const stmt = this.db.prepare(`
-        INSERT INTO messages (id, conversation_id, msg_id, type, content, position, status, created_at, order_key)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO messages (id, conversation_id, msg_id, type, content, position, status, created_at, order_key, history_index)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
-      stmt.run(row.id, row.conversation_id, row.msg_id, row.type, row.content, row.position, row.status, row.created_at, row.order_key);
+      stmt.run(row.id, row.conversation_id, row.msg_id, row.type, row.content, row.position, row.status, row.created_at, row.order_key, row.history_index);
 
       return {
         success: true,
@@ -616,11 +616,12 @@ export class AionUIDatabase {
         SET type     = ?,
             content  = ?,
             position = ?,
-            status   = ?
+            status   = ?,
+            history_index = COALESCE(?, history_index)
         WHERE id = ?
       `);
 
-      const result = stmt.run(row.type, row.content, row.position, row.status, messageId);
+      const result = stmt.run(row.type, row.content, row.position, row.status, row.history_index, messageId);
 
       return {
         success: true,

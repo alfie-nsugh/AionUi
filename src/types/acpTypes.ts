@@ -484,6 +484,15 @@ export interface HistorySnapshotUpdate extends BaseSessionUpdate {
   };
 }
 
+// History index update (for live turn completion)
+export interface HistoryIndexUpdate extends BaseSessionUpdate {
+  update: {
+    sessionUpdate: 'history_index_update';
+    lastUserIndex?: number;
+    lastModelIndex?: number;
+  };
+}
+
 // UI-only notice update
 export interface UiNoticeUpdate extends BaseSessionUpdate {
   update: {
@@ -508,7 +517,7 @@ export interface HistorySnapshotToolCall {
 }
 
 // Union type for all session updates
-export type AcpSessionUpdate = AgentMessageChunkUpdate | AgentThoughtChunkUpdate | ToolCallUpdate | ToolCallUpdateStatus | PlanUpdate | AvailableCommandsUpdate | UserMessageChunkUpdate | HistorySnapshotUpdate | UiNoticeUpdate;
+export type AcpSessionUpdate = AgentMessageChunkUpdate | AgentThoughtChunkUpdate | ToolCallUpdate | ToolCallUpdateStatus | PlanUpdate | AvailableCommandsUpdate | UserMessageChunkUpdate | HistorySnapshotUpdate | HistoryIndexUpdate | UiNoticeUpdate;
 // | CurrentModeUpdate;
 
 // 当前的ACP权限请求接口

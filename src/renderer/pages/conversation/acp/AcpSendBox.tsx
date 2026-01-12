@@ -8,7 +8,7 @@ import ShimmerText from '@/renderer/components/ShimmerText';
 import ThoughtDisplay, { type ThoughtData } from '@/renderer/components/ThoughtDisplay';
 import { getSendBoxDraftHook, type FileOrFolderItem } from '@/renderer/hooks/useSendBoxDraft';
 import { createSetUploadFile, useSendBoxFiles } from '@/renderer/hooks/useSendBoxFiles';
-import { useAddOrUpdateMessage, useClearMessages } from '@/renderer/messages/hooks';
+import { useAddOrUpdateMessage, useClearMessages, useUpdateMessageList } from '@/renderer/messages/hooks';
 import { allSupportedExts } from '@/renderer/services/FileService';
 import { emitter, useAddEventListener } from '@/renderer/utils/emitter';
 import { mergeFileSelectionItems } from '@/renderer/utils/fileSelection';
@@ -34,6 +34,7 @@ const useAcpSendBoxDraft = getSendBoxDraftHook('acp', {
 
 const useAcpMessage = (conversation_id: string) => {
   const addOrUpdateMessage = useAddOrUpdateMessage();
+  const updateMessageList = useUpdateMessageList();
   const clearMessages = useClearMessages();
   const [running, setRunning] = useState(false);
   const [thought, setThought] = useState<ThoughtData>({
@@ -42,6 +43,39 @@ const useAcpMessage = (conversation_id: string) => {
   });
   const [acpStatus, setAcpStatus] = useState<'connecting' | 'connected' | 'authenticated' | 'session_active' | 'disconnected' | 'error' | null>(null);
   const [aiProcessing, setAiProcessing] = useState(false); // New loading state for AI response
+
+  const applyHistoryIndexUpdate = useCallback(
+    (payload: { lastUserIndex?: number; lastModelIndex?: number }) => {
+      updateMessageList((list) => {
+        const updated = list.slice();
+        const hasUserIndex = typeof payload.lastUserIndex === 'number';
+        const hasModelIndex = typeof payload.lastModelIndex === 'number';
+
+        if (hasUserIndex) {
+          for (let i = updated.length - 1; i >= 0; i--) {
+            const msg = updated[i];
+            if (msg.type === 'text' && msg.position === 'right' && typeof msg.historyIndex !== 'number') {
+              updated[i] = { ...msg, historyIndex: payload.lastUserIndex };
+              break;
+            }
+          }
+        }
+
+        if (hasModelIndex) {
+          for (let i = updated.length - 1; i >= 0; i--) {
+            const msg = updated[i];
+            if (msg.type === 'text' && msg.position === 'left' && typeof msg.historyIndex !== 'number') {
+              updated[i] = { ...msg, historyIndex: payload.lastModelIndex };
+              break;
+            }
+          }
+        }
+
+        return updated;
+      });
+    },
+    [updateMessageList]
+  );
 
   const handleResponseMessage = useCallback(
     (message: IResponseMessage) => {
@@ -96,12 +130,15 @@ const useAcpMessage = (conversation_id: string) => {
           // Clear all messages before loading restored history (from /chat resume)
           clearMessages();
           break;
+        case 'history_index_update':
+          applyHistoryIndexUpdate(message.data as { lastUserIndex?: number; lastModelIndex?: number });
+          break;
         default:
           addOrUpdateMessage(transformMessage(message));
           break;
       }
     },
-    [conversation_id, addOrUpdateMessage, clearMessages, setThought, setRunning, setAiProcessing, setAcpStatus]
+    [conversation_id, addOrUpdateMessage, clearMessages, applyHistoryIndexUpdate, setThought, setRunning, setAiProcessing, setAcpStatus]
   );
 
   useEffect(() => {

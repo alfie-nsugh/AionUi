@@ -91,6 +91,7 @@ export interface IMessageRow {
   status?: 'finish' | 'pending' | 'error' | 'work';
   created_at: number;
   order_key?: number;
+  history_index?: number;
 }
 
 /**
@@ -179,6 +180,7 @@ export function messageToRow(message: TMessage): IMessageRow {
     status: message.status,
     created_at: message.createdAt || Date.now(),
     order_key: message.orderKey,
+    history_index: message.historyIndex,
   };
 }
 
@@ -196,6 +198,7 @@ export function rowToMessage(row: IMessageRow): TMessage {
     status: row.status,
     createdAt: row.created_at,
     orderKey: row.order_key,
+    historyIndex: row.history_index,
   } as TMessage;
 }
 

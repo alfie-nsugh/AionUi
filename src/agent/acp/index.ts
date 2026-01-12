@@ -463,6 +463,16 @@ export class AcpAgent {
         });
       }
 
+      if (data.update?.sessionUpdate === 'history_index_update') {
+        this.onStreamEvent({
+          type: 'history_index_update',
+          conversation_id: this.id,
+          data: data.update,
+          msg_id: uuid(),
+        });
+        return;
+      }
+
       const messages = this.adapter.convertSessionUpdate(data);
 
       for (let i = 0; i < messages.length; i++) {

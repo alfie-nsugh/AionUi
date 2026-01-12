@@ -247,9 +247,74 @@ const migration_v7: IMigration = {
 };
 
 /**
+ * Migration v7 -> v8: Add history_index to messages table
+ * Persist backend history index for edit/regenerate alignment
+ */
+const migration_v8: IMigration = {
+  version: 8,
+  name: 'Add history_index to messages',
+  up: (db) => {
+    const tableInfo = db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>;
+    const hasHistoryIndex = tableInfo.some((col) => col.name === 'history_index');
+
+    if (!hasHistoryIndex) {
+      db.exec(`ALTER TABLE messages ADD COLUMN history_index INTEGER;`);
+      console.log('[Migration v8] Added history_index column to messages table');
+    } else {
+      console.log('[Migration v8] history_index column already exists, skipping');
+    }
+
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_messages_history_index ON messages(history_index);
+      CREATE INDEX IF NOT EXISTS idx_messages_conversation_history ON messages(conversation_id, history_index);
+    `);
+    console.log('[Migration v8] Added history_index indexes');
+  },
+  down: (db) => {
+    db.exec(`
+      CREATE TABLE messages_backup AS
+      SELECT id, conversation_id, msg_id, type, content, position, status, created_at, order_key
+      FROM messages;
+
+      DROP TABLE messages;
+
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        msg_id TEXT,
+        type TEXT NOT NULL,
+        content TEXT NOT NULL,
+        position TEXT CHECK(position IN ('left', 'right', 'center', 'pop')),
+        status TEXT CHECK(status IN ('finish', 'pending', 'error', 'work')),
+        created_at INTEGER NOT NULL,
+        order_key INTEGER NOT NULL,
+        FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO messages (id, conversation_id, msg_id, type, content, position, status, created_at, order_key)
+      SELECT id, conversation_id, msg_id, type, content, position, status, created_at, order_key
+      FROM messages_backup;
+
+      DROP TABLE messages_backup;
+
+      CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
+      CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+      CREATE INDEX IF NOT EXISTS idx_messages_type ON messages(type);
+      CREATE INDEX IF NOT EXISTS idx_messages_msg_id ON messages(msg_id);
+      CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_messages_conv_created_desc ON messages(conversation_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_messages_type_created ON messages(type, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_messages_order_key ON messages(order_key);
+      CREATE INDEX IF NOT EXISTS idx_messages_conversation_order ON messages(conversation_id, order_key);
+    `);
+    console.log('[Migration v8] Rolled back: Removed history_index column from messages table');
+  },
+};
+
+/**
  * All migrations in order
  */
-export const ALL_MIGRATIONS: IMigration[] = [migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6, migration_v7];
+export const ALL_MIGRATIONS: IMigration[] = [migration_v1, migration_v2, migration_v3, migration_v4, migration_v5, migration_v6, migration_v7, migration_v8];
 
 /**
  * Get migrations needed to upgrade from one version to another
